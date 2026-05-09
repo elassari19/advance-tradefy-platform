@@ -1,10 +1,10 @@
 # Task Checklist: Tradefy Live Trading Terminal
 
-- `[ ]` **Phase 0: Project Initialization**
-  - `[ ]` Initialize `frontend/` directory (Vite React + TS)
-  - `[ ]` Install frontend core libraries (`tailwindcss`, `lucide-react`, `@monaco-editor/react`, `lightweight-charts`)
-  - `[ ]` Initialize `backend/` directory (Rust Cargo Workspace)
-  - `[ ]` Install backend core crates (`axum`, `tokio`, `tokio-tungstenite`, `serde`/`serde_json`, `pyo3`, `reqwest`, `sqlx`)
+- `[x]` **Phase 0: Project Initialization**
+  - `[x]` Initialize `frontend/` directory (Vite React + TS)
+  - `[x]` Install frontend core libraries (`tailwindcss`, `lucide-react`, `@monaco-editor/react`, `lightweight-charts`)
+  - `[x]` Initialize `backend/` directory (Rust Cargo Workspace)
+  - `[x]` Install backend core crates (`axum`, `tokio`, `tokio-tungstenite`, `serde`/`serde_json`, `pyo3`, `reqwest`, `sqlx`)
 
 - `[ ]` **Phase 1: Foundation & Live Data**
   - `[ ]` Build Rust WebSocket client to connect to exchange and parse ticks
