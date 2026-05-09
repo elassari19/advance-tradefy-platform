@@ -1,9 +1,13 @@
-import { LayoutPanelLeft, LineChart, Activity } from "lucide-react";
+import { LayoutPanelLeft, LineChart } from "lucide-react";
 import { useMarketData } from "./hooks/useMarketData";
+import { useSimulator } from "./hooks/useSimulator";
 import { Chart } from "./components/Chart";
+import { OrderPanel } from "./components/order/OrderPanel";
+import { TerminalTabs } from "./components/terminal/TerminalTabs";
 
-function App() {
+export function App() {
   const { lastTick, ticks, isConnected } = useMarketData();
+  const { state: simState, placeOrder, updatePosition, closePosition } = useSimulator();
 
   return (
     <div className="terminal-grid h-screen w-screen bg-[#09090b] text-[#fafafa] font-sans grid grid-cols-[280px_1fr_300px] grid-rows-[64px_1fr]">
@@ -27,8 +31,10 @@ function App() {
             </span>
           </div>
           <div className="text-sm font-mono bg-zinc-900 px-4 py-1.5 rounded-md border border-zinc-800 flex items-center gap-3">
-            <span className="text-zinc-500">Balance:</span>
-            <span className="text-green-400 font-bold">$10,000.00</span>
+            <span className="text-zinc-500">Equity:</span>
+            <span className={`${simState.equity >= simState.balance ? 'text-green-400' : 'text-red-400'} font-bold`}>
+              ${simState.equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </span>
           </div>
         </div>
       </header>
@@ -80,74 +86,28 @@ function App() {
            </div>
         </div>
 
-        <Chart ticks={ticks} />
+        <Chart 
+          ticks={ticks} 
+          positions={simState.open_positions} 
+          onUpdatePosition={updatePosition} 
+        />
 
-        <div className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg flex flex-col">
-           <div className="flex border-b border-zinc-800">
-             <button className="px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 border-blue-500 text-blue-400">Positions</button>
-             <button className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300 transition-colors">History</button>
-             <button className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300 transition-colors">Logs</button>
-           </div>
-           <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm italic">
-             No active positions
-           </div>
-        </div>
+        <TerminalTabs 
+          positions={simState.open_positions} 
+          history={simState.history} 
+          onClosePosition={closePosition}
+          onUpdatePosition={updatePosition}
+        />
       </main>
 
       {/* Right Sidebar - Order Panel */}
-      <aside className="border-l border-zinc-800 p-6 bg-zinc-950/50 flex flex-col gap-6">
-        <div className="flex items-center gap-2 px-2">
-          <Activity size={18} className="text-zinc-400" />
-          <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-500">Order Terminal</h2>
-        </div>
-
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-2">
-            <button className="py-3 bg-zinc-900 border border-zinc-800 rounded-lg font-bold text-sm hover:bg-zinc-800 transition-all active:scale-95">LIMIT</button>
-            <button className="py-3 bg-blue-600 text-white rounded-lg font-bold text-sm shadow-lg shadow-blue-500/20 active:scale-95">MARKET</button>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Size (BTC)</label>
-            <div className="relative">
-              <input type="number" defaultValue="0.1" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-lg font-mono focus:outline-none focus:ring-1 focus:ring-blue-500" />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 text-xs font-mono">BTC</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Take Profit</label>
-              <input type="number" placeholder="Optional" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-green-500/50" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Stop Loss</label>
-              <input type="number" placeholder="Optional" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-red-500/50" />
-            </div>
-          </div>
-
-          <div className="pt-4 grid grid-cols-2 gap-4">
-            <button className="py-4 bg-green-600/10 border border-green-600/30 text-green-500 rounded-xl font-black text-lg hover:bg-green-600 hover:text-white transition-all active:scale-95">BUY</button>
-            <button className="py-4 bg-red-600/10 border border-red-600/30 text-red-500 rounded-xl font-black text-lg hover:bg-red-600 hover:text-white transition-all active:scale-95">SELL</button>
-          </div>
-        </div>
-
-        <div className="mt-auto bg-zinc-900/30 border border-zinc-800/50 p-4 rounded-xl">
-           <div className="flex justify-between text-xs mb-2">
-             <span className="text-zinc-500">Available</span>
-             <span className="text-zinc-300 font-mono">$10,000.00</span>
-           </div>
-           <div className="flex justify-between text-xs mb-2">
-             <span className="text-zinc-500">Margin</span>
-             <span className="text-zinc-300 font-mono">$0.00</span>
-           </div>
-           <div className="w-full bg-zinc-800 h-1.5 rounded-full mt-3 overflow-hidden">
-             <div className="bg-blue-600 h-full w-0"></div>
-           </div>
-        </div>
-      </aside>
+      <OrderPanel 
+        balance={simState.balance} 
+        onPlaceOrder={placeOrder} 
+        symbol="BTCUSDT" 
+      />
     </div>
   );
 }
 
-export default App;
+// No default export

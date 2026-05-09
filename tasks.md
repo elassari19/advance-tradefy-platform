@@ -13,13 +13,15 @@
   - `[x]` Connect frontend to Rust backend WebSocket and manage state
   - `[x]` Integrate TradingView Lightweight Charts and plot live data
 
-- `[ ]` **Phase 2: Paper Trading Simulator (Core Logic)**
-  - `[ ]` Create `SimulatorEngine` struct in Rust (tracks balance and open positions)
-  - `[ ]` Expose HTTP/WS endpoints to receive manual buy/sell orders
-  - `[ ]` Implement internal tick processor to automatically check/trigger TP/SL
-  - `[ ]` Build "Manual Order Panel" UI (Lot Size, TP, SL, Buy/Sell buttons)
-  - `[ ]` Wire order buttons to send payloads to the backend API
-  - `[ ]` Build "Open Positions & History" table component
+- `[x]` **Phase 2: Paper Trading Simulator (Core Logic)**
+  - `[x]` Create `SimulatorEngine` struct in Rust (tracks balance and open positions)
+  - `[x]` Expose HTTP/WS endpoints to receive manual buy/sell orders
+  - `[x]` Implement internal tick processor to automatically check/trigger TP/SL
+  - `[x]` Build "Manual Order Panel" UI (Lot Size, TP, SL, Buy/Sell buttons)
+  - `[x]` Wire order buttons to send payloads to the backend API
+  - `[x]` Build "Open Positions & History" table component
+  - `[x]` Implement interactive chart lines for drag-and-drop TP/SL management
+  - `[x]` Add Close/Edit trade functionality (UI & Backend)
 
 - `[ ]` **Phase 3: Python Execution Engine & Webhooks**
   - `[ ]` Integrate `pyo3` into the Rust backend to embed Python
