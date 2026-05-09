@@ -6,12 +6,12 @@
   - `[x]` Initialize `backend/` directory (Rust Cargo Workspace)
   - `[x]` Install backend core crates (`axum`, `tokio`, `tokio-tungstenite`, `serde`/`serde_json`, `pyo3`, `reqwest`, `sqlx`)
 
-- `[ ]` **Phase 1: Foundation & Live Data**
-  - `[ ]` Build Rust WebSocket client to connect to exchange and parse ticks
-  - `[ ]` Build Axum WebSocket server endpoint (`/ws/live`) to broadcast ticks
-  - `[ ]` Build frontend "IDE Terminal" layout grid
-  - `[ ]` Connect frontend to Rust backend WebSocket and manage state
-  - `[ ]` Integrate TradingView Lightweight Charts and plot live data
+- `[x]` **Phase 1: Foundation & Live Data**
+  - `[x]` Build Rust WebSocket client to connect to exchange and parse ticks
+  - `[x]` Build Axum WebSocket server endpoint (`/ws/live`) to broadcast ticks
+  - `[x]` Build frontend "IDE Terminal" layout grid
+  - `[x]` Connect frontend to Rust backend WebSocket and manage state
+  - `[x]` Integrate TradingView Lightweight Charts and plot live data
 
 - `[ ]` **Phase 2: Paper Trading Simulator (Core Logic)**
   - `[ ]` Create `SimulatorEngine` struct in Rust (tracks balance and open positions)
