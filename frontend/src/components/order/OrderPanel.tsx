@@ -25,7 +25,7 @@ export const OrderPanel: React.FC<OrderPanelProps> = ({ balance, onPlaceOrder, s
   };
 
   return (
-    <aside className="border-l border-zinc-800 p-6 bg-zinc-950/50 flex flex-col gap-6 w-[300px]">
+    <aside className="border-l border-zinc-800 bg-zinc-950/50 flex flex-col gap-4 w-[300px] pt-4 px-4 pb-4">
       <div className="flex items-center gap-2 px-2">
         <Activity size={18} className="text-zinc-400" />
         <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-500">Order Terminal</h2>

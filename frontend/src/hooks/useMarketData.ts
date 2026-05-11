@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 export interface Tick {
   symbol: string;
@@ -20,15 +20,25 @@ function formatSymbol(symbol: string): string {
   return symbol.replace('/', '');
 }
 
-export const useMarketData = (symbol: string = 'BTC/USDT') => {
+function useMarketDataForSymbol(symbol: string, timeframe: number) {
   const [lastTick, setLastTick] = useState<Tick | null>(null);
-  const [ticks, setTicks] = useState<Tick[]>([]);
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [updateCount, setUpdateCount] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
-  const [timeframe, setTimeframe] = useState(5);
+  const [isInitializing, setIsInitializing] = useState(true);
   const ws = useRef<WebSocket | null>(null);
   const pendingCandlesRef = useRef<Map<number, Candle>>(new Map());
-  const lastCandleTimeRef = useRef<number>(0);
+  const timeframeRef = useRef(timeframe);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    timeframeRef.current = timeframe;
+  }, [timeframe]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const fetchHistory = useCallback(async (sym: string, tf: number) => {
     const binanceSymbol = formatSymbol(sym);
@@ -36,7 +46,7 @@ export const useMarketData = (symbol: string = 'BTC/USDT') => {
     try {
       const res = await fetch(`${API_URL}/api/history?symbol=${binanceSymbol}&interval=${interval}&limit=200`);
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data) && data.length > 0 && mountedRef.current) {
         const historical: Candle[] = data.map((c: any) => ({
           time: c.time,
           open: c.open,
@@ -47,88 +57,95 @@ export const useMarketData = (symbol: string = 'BTC/USDT') => {
         const map = new Map<number, Candle>();
         historical.forEach(c => map.set(c.time, c));
         pendingCandlesRef.current = map;
-        lastCandleTimeRef.current = historical[historical.length - 1].time;
         const candlesArray = Array.from(pendingCandlesRef.current.values()).sort((a, b) => a.time - b.time);
         setCandles(candlesArray);
+        setIsInitializing(false);
       }
     } catch (e) {
-      console.error('Failed to fetch history:', e);
+      console.error(`Failed to fetch history for ${sym}:`, e);
+      if (mountedRef.current) setIsInitializing(false);
     }
   }, []);
 
-  const updateCandles = useCallback((tick: Tick) => {
-    const tf = timeframe;
-    const candleDuration = tf * 60 * 1000;
-    const candleStart = Math.floor(tick.time / candleDuration) * candleDuration;
-    const candleTime = candleStart / 1000;
-
-    const current = pendingCandlesRef.current.get(candleTime);
-
-    if (current) {
-      current.high = Math.max(current.high, tick.price);
-      current.low = Math.min(current.low, tick.price);
-      current.close = tick.price;
-    } else {
-      pendingCandlesRef.current.set(candleStart, {
-        time: candleTime,
-        open: tick.price,
-        high: tick.price,
-        low: tick.price,
-        close: tick.price,
-      });
-      lastCandleTimeRef.current = candleTime;
-    }
-
-    const candlesArray = Array.from(pendingCandlesRef.current.values())
-      .sort((a, b) => a.time - b.time)
-      .slice(-200);
-    setCandles(candlesArray);
-  }, [timeframe]);
-
-  const changeTimeframe = useCallback((tf: number) => {
-    setTimeframe(tf);
-    fetchHistory(symbol, tf);
-  }, [fetchHistory, symbol]);
-
   useEffect(() => {
+    setIsInitializing(true);
     fetchHistory(symbol, timeframe);
 
     const connect = () => {
       ws.current = new WebSocket('ws://localhost:3000/ws/live');
 
       ws.current.onopen = () => {
-        setIsConnected(true);
+        if (mountedRef.current) setIsConnected(true);
       };
 
       ws.current.onmessage = (event) => {
+        if (!mountedRef.current) return;
         try {
           const tick: Tick = JSON.parse(event.data);
           if (tick.symbol !== formatSymbol(symbol)) return;
           setLastTick(tick);
-          setTicks((prev) => [...prev.slice(-100), tick]);
-          updateCandles(tick);
+
+          const tf = timeframeRef.current;
+          const candleDuration = tf * 60 * 1000;
+          const candleStart = Math.floor(tick.time / candleDuration) * candleDuration;
+          const candleTime = candleStart / 1000;
+
+          const current = pendingCandlesRef.current.get(candleTime);
+          if (current) {
+            current.high = Math.max(current.high, tick.price);
+            current.low = Math.min(current.low, tick.price);
+            current.close = tick.price;
+          } else {
+            pendingCandlesRef.current.set(candleStart, {
+              time: candleTime,
+              open: tick.price,
+              high: tick.price,
+              low: tick.price,
+              close: tick.price,
+            });
+          }
+
+          const candlesArray = Array.from(pendingCandlesRef.current.values())
+            .sort((a, b) => a.time - b.time)
+            .slice(-200);
+          setCandles(candlesArray);
+          setUpdateCount(c => c + 1);
         } catch (e) {
           console.error('Error parsing tick data', e);
         }
       };
 
       ws.current.onclose = () => {
-        setIsConnected(false);
-        setTimeout(connect, 3000);
+        if (mountedRef.current) {
+          setIsConnected(false);
+          setTimeout(connect, 3000);
+        }
       };
 
-      ws.current.onerror = (error) => {
-        console.error('WS Error:', error);
-        ws.current?.close();
+      ws.current.onerror = () => {
+        if (mountedRef.current) ws.current?.close();
       };
     };
 
     connect();
 
     return () => {
+      mountedRef.current = false;
       ws.current?.close();
     };
-  }, [symbol, timeframe, fetchHistory, updateCandles]);
+  }, [symbol, timeframe, fetchHistory]);
 
-  return { lastTick, ticks, candles, isConnected, timeframe, setTimeframe: changeTimeframe };
+  const changeTimeframe = useCallback((tf: number) => {
+    fetchHistory(symbol, tf);
+  }, [fetchHistory, symbol]);
+
+  return { lastTick, candles, updateCount, isConnected, isInitializing, changeTimeframe };
+}
+
+export { useMarketDataForSymbol };
+
+export const useMarketData = (symbol: string = 'BTC/USDT') => {
+  const [timeframe, setTimeframe] = useState(5);
+  const data = useMarketDataForSymbol(symbol, timeframe);
+  return { ...data, timeframe, setTimeframe };
 };
