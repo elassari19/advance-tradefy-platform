@@ -1,25 +1,32 @@
 mod models;
 mod simulator;
+mod strategy;
+mod webhooks;
 
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, State},
+    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Query, State},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use futures_util::{SinkExt, StreamExt};
-use models::{BinanceTicker, OrderRequest, SimulatorState, Tick, UpdatePositionRequest};
+use models::{BinanceTicker, HistoryParams, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle};
 use simulator::SimulatorEngine;
+use strategy::StrategyEngine;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+
+
 struct AppState {
     tx: broadcast::Sender<Tick>,
-    simulator: SimulatorEngine,
+    simulator: Arc<SimulatorEngine>,
+    strategy: StrategyEngine,
     last_tick: Mutex<Option<Tick>>,
+    webhook_configs: Mutex<Vec<WebhookConfig>>,
 }
 
 #[tokio::main]
@@ -31,12 +38,15 @@ async fn main() {
 
     // Set up broadcast channel
     let (tx, _rx) = broadcast::channel(100);
-    let simulator = SimulatorEngine::new(10000.0); // Initial $10k balance
+    let simulator = Arc::new(SimulatorEngine::new(10000.0)); // Initial $10k balance
+    let strategy = StrategyEngine::new(simulator.clone());
     
     let app_state = Arc::new(AppState { 
         tx: tx.clone(),
         simulator,
+        strategy,
         last_tick: Mutex::new(None),
+        webhook_configs: Mutex::new(Vec::new()),
     });
 
     // Spawn Binance stream task
@@ -60,6 +70,9 @@ async fn main() {
         .route("/api/position/update", post(update_position))
         .route("/api/position/close", post(close_position))
         .route("/api/state", get(get_simulator_state))
+        .route("/api/strategy/deploy", post(deploy_strategy))
+        .route("/api/webhooks", get(get_webhooks).post(update_webhooks))
+        .route("/api/history", get(get_history))
         .layer(cors)
         .with_state(app_state);
 
@@ -95,6 +108,13 @@ async fn start_binance_stream(state: Arc<AppState>) {
 
                                 // Process tick in simulator
                                 state.simulator.process_tick(&tick);
+
+                                // Process tick in strategy engine
+                                let webhook_configs = {
+                                    let c = state.webhook_configs.lock().unwrap();
+                                    c.clone()
+                                };
+                                state.strategy.on_tick(tick.clone(), webhook_configs);
                                 
                                 // Broadcast to frontend
                                 let _ = state.tx.send(tick);
@@ -149,9 +169,26 @@ async fn place_order(
     };
 
     if let Some(tick) = tick {
-        match state.simulator.place_order(payload, tick.price, tick.time) {
-            Ok(id) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "id": id }))),
-            Err(e) => (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e }))),
+        let res = state.simulator.place_order(payload.clone(), tick.price, tick.time);
+        
+        if let Ok(id) = res {
+            let webhook_configs = {
+                let c = state.webhook_configs.lock().unwrap();
+                c.clone()
+            };
+            
+            for config in webhook_configs.iter().filter(|c| c.enabled) {
+                let config_clone = config.clone();
+                let payload_clone = payload.clone();
+                let price = tick.price;
+                tokio::spawn(async move {
+                    webhooks::dispatch_webhook(config_clone.url, config_clone.secret_token, payload_clone, price).await;
+                });
+            }
+            
+            (axum::http::StatusCode::OK, Json(serde_json::json!({ "id": id })))
+        } else {
+            (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": res.err().unwrap() })))
         }
     } else {
         (axum::http::StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({ "error": "No price data available" })))
@@ -188,4 +225,71 @@ async fn close_position(
         Ok(_) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "success" }))),
         Err(e) => (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e }))),
     }
+}
+
+async fn deploy_strategy(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let code = payload.get("code").and_then(|v| v.as_str()).unwrap_or("");
+    match state.strategy.deploy(code.to_string()) {
+        Ok(_) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "success" }))),
+        Err(e) => (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e }))),
+    }
+}
+
+async fn get_webhooks(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let configs = state.webhook_configs.lock().unwrap();
+    Json(configs.clone())
+}
+
+async fn update_webhooks(
+    State(state): State<Arc<AppState>>,
+    Json(configs): Json<Vec<WebhookConfig>>,
+) -> impl IntoResponse {
+    let mut current = state.webhook_configs.lock().unwrap();
+    *current = configs;
+    axum::http::StatusCode::OK
+}
+
+async fn get_history(
+    Query(params): Query<HistoryParams>,
+) -> Result<Json<Vec<HistoricalCandle>>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let limit = params.limit.unwrap_or(200).min(200);
+    let url = format!(
+        "https://api.binance.com/api/v3/klines?symbol={}&interval={}&limit={}",
+        params.symbol, params.interval, limit
+    );
+
+    let resp = reqwest::get(&url).await
+        .map_err(|e| {
+            tracing::error!("Failed to fetch from Binance: {}", e);
+            (axum::http::StatusCode::BAD_GATEWAY, Json(serde_json::json!({ "error": "Failed to fetch klines" })))
+        })?;
+
+    let klines: Vec<Vec<serde_json::Value>> = resp.json().await
+        .map_err(|e| {
+            tracing::error!("Failed to parse Binance klines: {}", e);
+            (axum::http::StatusCode::BAD_GATEWAY, Json(serde_json::json!({ "error": "Failed to parse klines" })))
+        })?;
+
+    let candles: Vec<HistoricalCandle> = klines
+        .iter()
+        .filter_map(|k| {
+            let open_time = k.get(0)?.as_i64()?;
+            let open = k.get(1)?.as_str()?.parse().ok()?;
+            let high = k.get(2)?.as_str()?.parse().ok()?;
+            let low = k.get(3)?.as_str()?.parse().ok()?;
+            let close = k.get(4)?.as_str()?.parse().ok()?;
+            Some(HistoricalCandle {
+                time: (open_time / 1000) as u64,
+                open,
+                high,
+                low,
+                close,
+            })
+        })
+        .collect();
+
+    Ok(Json(candles))
 }

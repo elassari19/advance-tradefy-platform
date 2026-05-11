@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
 import type { Position, TradeHistory } from "../../hooks/useSimulator";
-import { X, Edit2, Check, XCircle } from 'lucide-react';
+import { X, Edit2, Check, XCircle, Code2 } from 'lucide-react';
+import { CodeEditor } from './CodeEditor';
 
 interface TerminalTabsProps {
   positions: Position[];
   history: TradeHistory[];
   onClosePosition: (id: string) => void;
   onUpdatePosition: (id: string, tp: number | null, sl: number | null) => void;
+  onDeployStrategy: (code: string) => Promise<void>;
 }
 
-export const TerminalTabs: React.FC<TerminalTabsProps> = ({ positions, history, onClosePosition, onUpdatePosition }) => {
-  const [activeTab, setActiveTab] = useState<'positions' | 'history' | 'logs'>('positions');
+export const TerminalTabs: React.FC<TerminalTabsProps> = ({ positions, history, onClosePosition, onUpdatePosition, onDeployStrategy }) => {
+  const [activeTab, setActiveTab] = useState<'positions' | 'history' | 'strategy' | 'logs'>('positions');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<{ tp: string; sl: string }>({ tp: '', sl: '' });
 
@@ -54,6 +56,14 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({ positions, history, 
             }`}
         >
           History ({history.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('strategy')}
+          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${activeTab === 'strategy' ? 'border-blue-500 text-blue-400 bg-blue-500/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'
+            }`}
+        >
+          <Code2 size={14} />
+          Strategy
         </button>
         <button
           onClick={() => setActiveTab('logs')}
@@ -191,6 +201,10 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({ positions, history, 
 
         {activeTab === 'logs' && (
           <div className="p-4 text-zinc-600 italic text-center">System logs will appear here.</div>
+        )}
+
+        {activeTab === 'strategy' && (
+          <CodeEditor onDeploy={onDeployStrategy} />
         )}
       </div>
     </div>

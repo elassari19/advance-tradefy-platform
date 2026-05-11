@@ -23,7 +23,7 @@
   - `[x]` Implement interactive chart lines for drag-and-drop TP/SL management
   - `[x]` Add Close/Edit trade functionality (UI & Backend)
 
-- `[ ]` **Phase 3: Python Execution Engine & Webhooks**
+- `[/]` **Phase 3: Python Execution Engine & Webhooks**
   - `[ ]` Integrate `pyo3` into the Rust backend to embed Python
   - `[ ]` Create data bridge: call Python `on_tick(price)` on every live tick
   - `[ ]` Expose Rust `buy()` and `sell()` functions to Python

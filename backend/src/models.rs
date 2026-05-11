@@ -74,3 +74,27 @@ pub struct UpdatePositionRequest {
     pub take_profit: Option<f64>,
     pub stop_loss: Option<f64>,
 }
+#[derive(Debug, Deserialize)]
+pub struct HistoryParams {
+    pub symbol: String,
+    pub interval: String,
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HistoricalCandle {
+    pub time: u64,
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub close: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WebhookConfig {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub secret_token: String,
+    pub enabled: bool,
+}

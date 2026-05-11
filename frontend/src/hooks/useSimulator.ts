@@ -43,6 +43,14 @@ export type OrderRequest = {
   stop_loss: number | null;
 };
 
+export type WebhookConfig = {
+  id: string;
+  name: string;
+  url: string;
+  secret_token: string;
+  enabled: boolean;
+};
+
 export function useSimulator() {
   const [state, setState] = useState<SimulatorState>({
     balance: 0,
@@ -138,5 +146,47 @@ export function useSimulator() {
     }
   }, [fetchState]);
 
-  return { state, loading, placeOrder, updatePosition, closePosition, refresh: fetchState };
+  const deployStrategy = useCallback(async (code: string) => {
+    const response = await fetch('http://127.0.0.1:3000/api/strategy/deploy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to deploy strategy');
+    }
+  }, []);
+
+  const saveWebhooks = useCallback(async (webhooks: WebhookConfig[]) => {
+    const response = await fetch('http://127.0.0.1:3000/api/webhooks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(webhooks),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to save webhooks');
+    }
+  }, []);
+
+  const fetchWebhooks = useCallback(async () => {
+    const response = await fetch('http://127.0.0.1:3000/api/webhooks');
+    if (response.ok) {
+      return await response.json();
+    }
+    return [];
+  }, []);
+
+  return { 
+    state, 
+    loading, 
+    placeOrder, 
+    updatePosition, 
+    closePosition, 
+    deployStrategy,
+    saveWebhooks,
+    fetchWebhooks,
+    refresh: fetchState 
+  };
 }
