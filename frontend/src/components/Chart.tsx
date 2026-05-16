@@ -325,7 +325,7 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
         indicatorSeriesRef.current.set(line.id, s);
       }
       if (line.values.length > 0) {
-        s.setData(line.values.map(v => ({ time: v.time as any, value: v.value })));
+        s.setData(line.values.filter(v => Number.isFinite(v.value)).map(v => ({ time: v.time as any, value: v.value })));
       }
     }
 
@@ -370,7 +370,7 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
         subIndicatorSeriesRef.current.set(line.id, s);
       }
       if (line.values.length > 0) {
-        s.setData(line.values.map(v => ({ time: v.time as any, value: v.value })));
+        s.setData(line.values.filter(v => Number.isFinite(v.value)).map(v => ({ time: v.time as any, value: v.value })));
       }
     }
 

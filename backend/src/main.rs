@@ -315,7 +315,7 @@ async fn update_webhooks(
 async fn get_history(
     Query(params): Query<HistoryParams>,
 ) -> Result<Json<Vec<HistoricalCandle>>, (axum::http::StatusCode, Json<serde_json::Value>)> {
-    let limit = params.limit.unwrap_or(200).min(200);
+    let limit = params.limit.unwrap_or(1000).min(1000);
     let url = format!(
         "https://api.binance.com/api/v3/klines?symbol={}&interval={}&limit={}",
         params.symbol, params.interval, limit

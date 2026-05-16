@@ -44,7 +44,7 @@ function useMarketDataForSymbol(symbol: string, timeframe: number) {
     const binanceSymbol = formatSymbol(sym);
     const interval = tf >= 60 ? `${Math.floor(tf / 60)}h` : `${tf}m`;
     try {
-      const res = await fetch(`${API_URL}/api/history?symbol=${binanceSymbol}&interval=${interval}&limit=200`);
+      const res = await fetch(`${API_URL}/api/history?symbol=${binanceSymbol}&interval=${interval}&limit=1000`);
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0 && mountedRef.current) {
         const historical: Candle[] = data.map((c: any) => ({
@@ -107,7 +107,7 @@ function useMarketDataForSymbol(symbol: string, timeframe: number) {
 
           const candlesArray = Array.from(pendingCandlesRef.current.values())
             .sort((a, b) => a.time - b.time)
-            .slice(-200);
+            .slice(-1000);
           setCandles(candlesArray);
           setUpdateCount(c => c + 1);
         } catch (e) {
