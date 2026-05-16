@@ -104,6 +104,8 @@ async fn main() {
         .route("/api/position/close", post(close_position))
         .route("/api/state", get(get_simulator_state))
         .route("/api/strategy/deploy", post(deploy_strategy))
+        .route("/api/strategy/remove", post(remove_strategy))
+        .route("/api/strategy/active", get(get_active_strategies))
         .route("/api/webhooks", get(get_webhooks).post(update_webhooks))
         .route("/api/history", get(get_history))
         .route("/api/ai/chat", post(ai_chat))
@@ -265,11 +267,35 @@ async fn deploy_strategy(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<serde_json::Value>,
 ) -> impl IntoResponse {
+    let symbol = payload.get("symbol").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let code = payload.get("code").and_then(|v| v.as_str()).unwrap_or("");
-    match state.strategy.deploy(code.to_string()) {
+    if symbol.is_empty() {
+        return (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "symbol is required" })));
+    }
+    match state.strategy.deploy(symbol, code.to_string()) {
         Ok(_) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "success" }))),
         Err(e) => (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e }))),
     }
+}
+
+async fn remove_strategy(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let symbol = payload.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+    if symbol.is_empty() {
+        return (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "symbol is required" })));
+    }
+    match state.strategy.remove(symbol) {
+        Ok(_) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "success" }))),
+        Err(e) => (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e }))),
+    }
+}
+
+async fn get_active_strategies(
+    State(state): State<Arc<AppState>>,
+) -> Json<Vec<String>> {
+    Json(state.strategy.get_active_symbols())
 }
 
 async fn get_webhooks(State(state): State<Arc<AppState>>) -> impl IntoResponse {

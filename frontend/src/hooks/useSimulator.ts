@@ -67,8 +67,8 @@ export function useSimulator() {
         const data = await response.json();
         setState(data);
       }
-    } catch (error) {
-      console.error('Failed to fetch simulator state:', error);
+    } catch {
+      // Backend may not be ready yet
     } finally {
       setLoading(false);
     }
@@ -146,16 +146,40 @@ export function useSimulator() {
     }
   }, [fetchState]);
 
-  const deployStrategy = useCallback(async (code: string) => {
+  const deployStrategy = useCallback(async (symbol: string, code: string) => {
     const response = await fetch('http://127.0.0.1:3000/api/strategy/deploy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ symbol, code }),
     });
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.error || 'Failed to deploy strategy');
     }
+  }, []);
+
+  const removeStrategy = useCallback(async (symbol: string) => {
+    const response = await fetch('http://127.0.0.1:3000/api/strategy/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to remove strategy');
+    }
+  }, []);
+
+  const fetchActiveStrategies = useCallback(async (): Promise<string[]> => {
+    try {
+      const response = await fetch('http://127.0.0.1:3000/api/strategy/active');
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch {
+      // Backend may not be ready yet
+    }
+    return [];
   }, []);
 
   const saveWebhooks = useCallback(async (webhooks: WebhookConfig[]) => {
@@ -185,6 +209,8 @@ export function useSimulator() {
     updatePosition, 
     closePosition, 
     deployStrategy,
+    removeStrategy,
+    fetchActiveStrategies,
     saveWebhooks,
     fetchWebhooks,
     refresh: fetchState 

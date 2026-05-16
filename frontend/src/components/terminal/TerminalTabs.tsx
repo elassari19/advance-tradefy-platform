@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Position, TradeHistory } from "../../hooks/useSimulator";
 import { X, Edit2, Check, XCircle, Code2 } from 'lucide-react';
 import { CodeEditor } from './CodeEditor';
@@ -6,13 +6,26 @@ import { CodeEditor } from './CodeEditor';
 interface TerminalTabsProps {
   positions: Position[];
   history: TradeHistory[];
+  activeSymbol: string;
+  strategyCode: string;
+  strategyActive: boolean;
   onClosePosition: (id: string) => void;
   onUpdatePosition: (id: string, tp: number | null, sl: number | null) => void;
-  onDeployStrategy: (code: string) => Promise<void>;
+  onDeployStrategy: (symbol: string, code: string) => Promise<void>;
+  onRemoveStrategy: (symbol: string) => Promise<void>;
+  onStrategyCodeChange: (code: string) => void;
+  focusTab?: 'positions' | 'history' | 'strategy' | 'logs';
 }
 
-export const TerminalTabs: React.FC<TerminalTabsProps> = ({ positions, history, onClosePosition, onUpdatePosition, onDeployStrategy }) => {
+export const TerminalTabs: React.FC<TerminalTabsProps> = ({
+  positions, history, activeSymbol, strategyCode, strategyActive,
+  onClosePosition, onUpdatePosition, onDeployStrategy, onRemoveStrategy, onStrategyCodeChange, focusTab
+}) => {
   const [activeTab, setActiveTab] = useState<'positions' | 'history' | 'strategy' | 'logs'>('positions');
+
+  useEffect(() => {
+    if (focusTab) setActiveTab(focusTab);
+  }, [focusTab]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<{ tp: string; sl: string }>({ tp: '', sl: '' });
 
@@ -64,6 +77,7 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({ positions, history, 
         >
           <Code2 size={14} />
           Strategy
+          {strategyActive && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
         </button>
         <button
           onClick={() => setActiveTab('logs')}
@@ -204,7 +218,14 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({ positions, history, 
         )}
 
         {activeTab === 'strategy' && (
-          <CodeEditor onDeploy={onDeployStrategy} />
+          <CodeEditor
+            symbol={activeSymbol}
+            code={strategyCode}
+            isActive={strategyActive}
+            onCodeChange={onStrategyCodeChange}
+            onDeploy={onDeployStrategy}
+            onRemove={onRemoveStrategy}
+          />
         )}
       </div>
     </div>

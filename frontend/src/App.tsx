@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FlaskConical, X, Plus, ChevronDown } from "lucide-react";
+import { FlaskConical, X, Plus, ChevronDown, BarChart3 } from "lucide-react";
 import { useMarketDataForSymbol } from "./hooks/useMarketData";
 import { useSimulator } from "./hooks/useSimulator";
 import { Chart } from "./components/Chart";
@@ -10,10 +10,15 @@ import { WebhookSettings } from "./components/settings/WebhookSettings";
 import { SymbolSearchModal } from "./components/settings/SymbolSearchModal";
 import { TimeframeModal } from "./components/settings/TimeframeModal";
 import { AIChat } from "./components/chat/AIChat";
+import { IndicatorsModal } from "./components/IndicatorsModal";
+import { CustomIndicatorModal } from "./components/CustomIndicatorModal";
 import type { WebhookConfig } from "./hooks/useSimulator";
+import type { IndicatorConfig, CustomIndicatorDef } from "./utils/indicators";
 
 type View = 'trade' | 'backtest' | 'script';
 type ChartType = 'area' | 'line' | 'candle';
+
+const DEFAULT_STRATEGY_CODE = '# Write your strategy here...\n\ndef on_tick(price, candles):\n    pass';
 
 function formatTimeframe(minutes: number): string {
   if (minutes >= 10080) return `${Math.floor(minutes / 10080)}W`;
@@ -33,17 +38,95 @@ export function App() {
   const [activeSymbol, setActiveSymbol] = useState('BTC/USDT');
   const [timeframe, setTimeframe] = useState(5);
   const [chartType, setChartType] = useState<ChartType>('candle');
-  const [strategyCode, setStrategyCode] = useState('# Write your strategy here...\n\ndef on_tick(price, candles):\n    pass');
 
-  const { state: simState, placeOrder, updatePosition, closePosition, deployStrategy, saveWebhooks, fetchWebhooks } = useSimulator();
+  const [strategyCodes, setStrategyCodes] = useState<Record<string, string>>({});
+  const [activeStrategySymbols, setActiveStrategySymbols] = useState<string[]>([]);
+  const [indicatorConfigs, setIndicatorConfigs] = useState<Record<string, IndicatorConfig[]>>({});
+  const [customIndicatorDefs, setCustomIndicatorDefs] = useState<CustomIndicatorDef[]>(() => {
+    try {
+      const saved = localStorage.getItem('customIndicators');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [showCustomModal, setShowCustomModal] = useState(false);
+  const [editCustomDef, setEditCustomDef] = useState<CustomIndicatorDef | null>(null);
+  const [showIndicatorsModal, setShowIndicatorsModal] = useState(false);
+  const [focusTab, setFocusTab] = useState<'positions' | 'history' | 'strategy' | 'logs' | undefined>(undefined);
 
-  const handleApplyCode = useCallback((code: string) => {
-    setStrategyCode(code);
-  }, []);
+  const { state: simState, placeOrder, updatePosition, closePosition, deployStrategy, removeStrategy, fetchActiveStrategies, saveWebhooks, fetchWebhooks } = useSimulator();
 
   useEffect(() => {
     fetchWebhooks().then(setWebhooks).catch(console.error);
-  }, [fetchWebhooks]);
+    fetchActiveStrategies().then(setActiveStrategySymbols).catch(console.error);
+  }, [fetchWebhooks, fetchActiveStrategies]);
+
+  const currentStrategyCode = strategyCodes[activeSymbol] ?? DEFAULT_STRATEGY_CODE;
+  const currentStrategyActive = activeStrategySymbols.includes(activeSymbol.replace('/', ''));
+  const currentIndicators = indicatorConfigs[activeSymbol] ?? [];
+
+  const handleStrategyCodeChange = useCallback((code: string) => {
+    setStrategyCodes(prev => ({ ...prev, [activeSymbol]: code }));
+  }, [activeSymbol]);
+
+  const handleDeployStrategy = useCallback(async (symbol: string, code: string) => {
+    const rawSymbol = symbol.replace('/', '');
+    await deployStrategy(rawSymbol, code);
+    setActiveStrategySymbols(prev => prev.includes(rawSymbol) ? prev : [...prev, rawSymbol]);
+  }, [deployStrategy]);
+
+  const handleRemoveStrategy = useCallback(async (symbol: string) => {
+    const rawSymbol = symbol.replace('/', '');
+    await removeStrategy(rawSymbol);
+    setActiveStrategySymbols(prev => prev.filter(s => s !== rawSymbol));
+  }, [removeStrategy]);
+
+  const handleToggleIndicator = useCallback((config: IndicatorConfig) => {
+    setIndicatorConfigs(prev => {
+      const current = prev[activeSymbol] ?? [];
+      const exists = current.find(i => i.id === config.id);
+      if (exists) {
+        return { ...prev, [activeSymbol]: current.filter(i => i.id !== config.id) };
+      }
+      return { ...prev, [activeSymbol]: [...current, config] };
+    });
+  }, [activeSymbol]);
+
+  const handleRemoveIndicator = useCallback((id: string) => {
+    setIndicatorConfigs(prev => {
+      const current = prev[activeSymbol] ?? [];
+      return { ...prev, [activeSymbol]: current.filter(i => i.id !== id) };
+    });
+  }, [activeSymbol]);
+
+  const handleOpenStrategy = useCallback(() => {
+    setFocusTab('strategy');
+    setTimeout(() => setFocusTab(undefined), 100);
+  }, []);
+
+  const handleSaveCustomIndicator = useCallback((def: CustomIndicatorDef) => {
+    setCustomIndicatorDefs(prev => {
+      const existing = prev.findIndex(d => d.id === def.id);
+      const next = existing >= 0
+        ? prev.map((d, i) => i === existing ? def : d)
+        : [...prev, def];
+      localStorage.setItem('customIndicators', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const handleOpenCustomModal = useCallback(() => {
+    setEditCustomDef(null);
+    setShowCustomModal(true);
+  }, []);
+
+  const handleEditCustomIndicator = useCallback((def: CustomIndicatorDef) => {
+    setEditCustomDef(def);
+    setShowCustomModal(true);
+  }, []);
+
+  const handleApplyCode = useCallback((code: string) => {
+    setStrategyCodes(prev => ({ ...prev, [activeSymbol]: code }));
+  }, [activeSymbol]);
 
   const handleAddSymbol = useCallback((symbol: string) => {
     setTabs(prev => {
@@ -94,25 +177,33 @@ export function App() {
           <main className="flex flex-col overflow-hidden bg-[#09090b]">
             <div className="flex items-center justify-between border-b border-zinc-800 bg-[#09090b] overflow-x-auto scrollbar-none shrink-0">
               <div className="flex items-center">
-                {tabs.map((symbol) => (
-                  <button
-                    key={symbol}
-                    onClick={() => setActiveSymbol(symbol)}
-                    className={`group flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-r border-zinc-800 whitespace-nowrap transition-colors ${
-                      symbol === activeSymbol
-                        ? 'bg-zinc-900 text-white'
-                        : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
-                    }`}
-                  >
-                    <span>{symbol}</span>
-                    <span
-                      onClick={(e) => { e.stopPropagation(); handleCloseTab(symbol); }}
-                      className="ml-1 w-4 h-4 rounded flex items-center justify-center text-zinc-600 hover:text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                {tabs.map((symbol) => {
+                  const hasStrategy = activeStrategySymbols.includes(symbol.replace('/', ''));
+                  const hasIndicators = (indicatorConfigs[symbol] ?? []).length > 0;
+                  const hasAny = hasStrategy || hasIndicators;
+                  return (
+                    <button
+                      key={symbol}
+                      onClick={() => setActiveSymbol(symbol)}
+                      className={`group flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-r border-zinc-800 whitespace-nowrap transition-colors ${
+                        symbol === activeSymbol
+                          ? 'bg-zinc-900 text-white'
+                          : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
+                      }`}
                     >
-                      <X size={12} />
-                    </span>
-                  </button>
-                ))}
+                      {hasAny && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      )}
+                      <span>{symbol}</span>
+                      <span
+                        onClick={(e) => { e.stopPropagation(); handleCloseTab(symbol); }}
+                        className="ml-1 w-4 h-4 rounded flex items-center justify-center text-zinc-600 hover:text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X size={12} />
+                      </span>
+                    </button>
+                  );
+                })}
                 <button
                   onClick={() => setShowSymbolSearch(true)}
                   className="flex items-center gap-1 px-4 py-2.5 text-zinc-500 hover:text-white transition-colors"
@@ -122,6 +213,22 @@ export function App() {
               </div>
 
               <div className="flex items-center gap-2 px-3 shrink-0">
+                <button
+                  onClick={() => setShowIndicatorsModal(true)}
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-mono transition-colors border ${
+                    currentIndicators.length > 0
+                      ? 'bg-blue-600/10 border-blue-500/30 text-blue-400'
+                      : 'bg-zinc-800/50 hover:bg-zinc-700 border-zinc-700 text-zinc-300'
+                  }`}
+                >
+                  <BarChart3 size={14} />
+                  Indicators
+                  {currentIndicators.length > 0 && (
+                    <span className="ml-1 w-4 h-4 rounded-full bg-blue-500 text-[9px] font-bold text-white flex items-center justify-center">
+                      {currentIndicators.length}
+                    </span>
+                  )}
+                </button>
                 <div className="relative">
                   <button
                     onClick={() => {
@@ -155,15 +262,22 @@ export function App() {
                     chartType={chartType}
                     positions={simState.open_positions}
                     onUpdatePosition={updatePosition}
+                    indicatorConfigs={currentIndicators}
                   />
                 </div>
                 <div className="h-[180px] shrink-0 border-t border-zinc-800">
                   <TerminalTabs
                     positions={simState.open_positions}
                     history={simState.history}
+                    activeSymbol={activeSymbol}
+                    strategyCode={currentStrategyCode}
+                    strategyActive={currentStrategyActive}
                     onClosePosition={closePosition}
                     onUpdatePosition={updatePosition}
-                    onDeployStrategy={deployStrategy}
+                    onDeployStrategy={handleDeployStrategy}
+                    onRemoveStrategy={handleRemoveStrategy}
+                    onStrategyCodeChange={handleStrategyCodeChange}
+                    focusTab={focusTab}
                   />
                 </div>
               </div>
@@ -210,6 +324,25 @@ export function App() {
         onSelect={handleAddSymbol}
       />
 
+      <IndicatorsModal
+        isOpen={showIndicatorsModal}
+        onClose={() => setShowIndicatorsModal(false)}
+        activeIndicators={currentIndicators}
+        customIndicators={customIndicatorDefs}
+        onToggleIndicator={handleToggleIndicator}
+        onRemoveIndicator={handleRemoveIndicator}
+        onOpenStrategy={handleOpenStrategy}
+        onOpenCustomModal={handleOpenCustomModal}
+        onEditCustomIndicator={handleEditCustomIndicator}
+      />
+
+      <CustomIndicatorModal
+        isOpen={showCustomModal}
+        onClose={() => setShowCustomModal(false)}
+        onSave={handleSaveCustomIndicator}
+        editDef={editCustomDef}
+      />
+
       <TimeframeModal
         isOpen={showTimeframeModal}
         onClose={() => setShowTimeframeModal(false)}
@@ -226,12 +359,14 @@ function TabChart({
   chartType,
   positions,
   onUpdatePosition,
+  indicatorConfigs,
 }: {
   symbol: string;
   timeframe: number;
   chartType: ChartType;
   positions: any[];
   onUpdatePosition: (id: string, tp: number | null, sl: number | null) => void;
+  indicatorConfigs: IndicatorConfig[];
 }) {
   const { candles, isInitializing } = useMarketDataForSymbol(symbol, timeframe);
 
@@ -252,6 +387,7 @@ function TabChart({
       positions={positions}
       onUpdatePosition={onUpdatePosition}
       chartType={chartType}
+      indicatorConfigs={indicatorConfigs}
     />
   );
 }
