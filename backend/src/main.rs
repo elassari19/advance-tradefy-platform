@@ -1,8 +1,11 @@
+mod ai;
 mod models;
+mod python_runtime;
 mod simulator;
 mod strategy;
 mod webhooks;
 
+use ai::AIClient;
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Query, State},
     response::IntoResponse,
@@ -10,12 +13,12 @@ use axum::{
     Json, Router,
 };
 use futures_util::{SinkExt, StreamExt};
-use models::{BinanceTicker, HistoryParams, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle};
+use models::{AIChatRequest, BinanceTicker, HistoryParams, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle};
 use simulator::SimulatorEngine;
 use strategy::StrategyEngine;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -27,13 +30,34 @@ struct AppState {
     strategy: StrategyEngine,
     last_tick: Mutex<Option<Tick>>,
     webhook_configs: Mutex<Vec<WebhookConfig>>,
+    ai_client: AIClient,
 }
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing
+    // Load .env file from current directory
+    let env_path = std::env::current_dir()
+        .map(|p| p.join(".env"))
+        .unwrap_or_default();
+    
+    if env_path.exists() {
+        dotenvy::from_path(&env_path).ok();
+        tracing::info!("Loaded .env from {:?}", env_path);
+    } else {
+        dotenvy::dotenv().ok();
+    }
+
+    // Initialize tracing with filtering
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| {
+            tracing_subscriber::EnvFilter::new("info")
+        })
+        .add_directive("tokio_tungstenite=warn".parse().unwrap())
+        .add_directive("tungstenite=warn".parse().unwrap());
+
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer().with_target(false))
         .init();
 
     // Set up broadcast channel
@@ -41,12 +65,21 @@ async fn main() {
     let simulator = Arc::new(SimulatorEngine::new(10000.0)); // Initial $10k balance
     let strategy = StrategyEngine::new(simulator.clone());
     
+    // Initialize AI client
+    let openrouter_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_else(|_| "NOT_FOUND".to_string());
+    let google_key = std::env::var("AI_API_KEY").unwrap_or_else(|_| "NOT_FOUND".to_string());
+    
+    tracing::info!("OpenRouter key: {}", if openrouter_key.len() > 20 { "SET ({} chars)".to_string() } else { openrouter_key.clone() });
+    tracing::info!("Google key: {}", if google_key.len() > 20 { "SET ({} chars)".to_string() } else { google_key.clone() });
+    let ai_client = AIClient::new(openrouter_key, google_key);
+    
     let app_state = Arc::new(AppState { 
         tx: tx.clone(),
         simulator,
         strategy,
         last_tick: Mutex::new(None),
         webhook_configs: Mutex::new(Vec::new()),
+        ai_client,
     });
 
     // Spawn Binance stream task
@@ -73,6 +106,7 @@ async fn main() {
         .route("/api/strategy/deploy", post(deploy_strategy))
         .route("/api/webhooks", get(get_webhooks).post(update_webhooks))
         .route("/api/history", get(get_history))
+        .route("/api/ai/chat", post(ai_chat))
         .layer(cors)
         .with_state(app_state);
 
@@ -292,4 +326,40 @@ async fn get_history(
         .collect();
 
     Ok(Json(candles))
+}
+
+async fn ai_chat(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<AIChatRequest>,
+) -> impl IntoResponse {
+    let session_id = uuid::Uuid::new_v4().to_string();
+    
+    let (tx, mut rx) = mpsc::channel::<String>(100);
+    
+    let request_clone = AIChatRequest {
+        messages: request.messages.clone(),
+        models: request.models.clone(),
+        symbol: request.symbol.clone(),
+        timeframe: request.timeframe.clone(),
+    };
+    
+    let ai_client = state.ai_client.clone();
+    
+    tokio::spawn(async move {
+        let _ = ai_client.chat(request_clone, session_id.clone(), tx).await;
+    });
+    
+    use axum::body::Body;
+    use bytes::Bytes;
+    
+    let stream = async_stream::stream! {
+        while let Some(data) = rx.recv().await {
+            yield Ok::<Bytes, std::convert::Infallible>(Bytes::from(data));
+        }
+    };
+    
+    (
+        [("Content-Type", "text/event-stream; charset=utf-8")],
+        Body::from_stream(stream),
+    )
 }

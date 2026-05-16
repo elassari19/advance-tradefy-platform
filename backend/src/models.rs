@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Tick {
@@ -97,4 +99,71 @@ pub struct WebhookConfig {
     pub url: String,
     pub secret_token: String,
     pub enabled: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AIMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AIChatRequest {
+    pub messages: Vec<AIMessage>,
+    pub models: Vec<String>,
+    pub symbol: Option<String>,
+    pub timeframe: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[allow(dead_code)]
+pub struct AIStreamResponse {
+    pub tab_index: usize,
+    pub model: String,
+    pub delta: String,
+    pub is_done: bool,
+    pub has_code: bool,
+    pub extracted_code: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct AIResult {
+    pub model: String,
+    pub content: String,
+    pub has_code: bool,
+    pub extracted_code: Option<String>,
+    pub done: Arc<AtomicBool>,
+}
+
+impl AIResult {
+    pub fn new(model: String) -> Self {
+        Self {
+            model,
+            content: String::new(),
+            has_code: false,
+            extracted_code: None,
+            done: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn finish(&self) {
+        self.done.store(true, Ordering::Relaxed);
+    }
+
+    #[allow(dead_code)]
+    pub fn is_done(&self) -> bool {
+        self.done.load(Ordering::Relaxed)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
+pub struct ChatMessageRecord {
+    pub session_id: String,
+    pub role: String,
+    pub model: Option<String>,
+    pub content: String,
+    pub has_code: bool,
+    pub extracted_code: Option<String>,
 }

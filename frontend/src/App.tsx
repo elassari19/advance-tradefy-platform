@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { LayoutPanelLeft, Code, FlaskConical, X, Plus, ChevronDown } from "lucide-react";
+import { FlaskConical, X, Plus, ChevronDown } from "lucide-react";
 import { useMarketDataForSymbol } from "./hooks/useMarketData";
 import { useSimulator } from "./hooks/useSimulator";
 import { Chart } from "./components/Chart";
@@ -9,6 +9,7 @@ import { Header } from "./components/layout/Header";
 import { WebhookSettings } from "./components/settings/WebhookSettings";
 import { SymbolSearchModal } from "./components/settings/SymbolSearchModal";
 import { TimeframeModal } from "./components/settings/TimeframeModal";
+import { AIChat } from "./components/chat/AIChat";
 import type { WebhookConfig } from "./hooks/useSimulator";
 
 type View = 'trade' | 'backtest' | 'script';
@@ -32,8 +33,13 @@ export function App() {
   const [activeSymbol, setActiveSymbol] = useState('BTC/USDT');
   const [timeframe, setTimeframe] = useState(5);
   const [chartType, setChartType] = useState<ChartType>('candle');
+  const [strategyCode, setStrategyCode] = useState('# Write your strategy here...\n\ndef on_tick(price, candles):\n    pass');
 
   const { state: simState, placeOrder, updatePosition, closePosition, deployStrategy, saveWebhooks, fetchWebhooks } = useSimulator();
+
+  const handleApplyCode = useCallback((code: string) => {
+    setStrategyCode(code);
+  }, []);
 
   useEffect(() => {
     fetchWebhooks().then(setWebhooks).catch(console.error);
@@ -74,7 +80,7 @@ export function App() {
   ];
 
   return (
-    <div className="terminal-grid h-screen w-screen bg-[#09090b] text-[#fafafa] font-sans grid grid-cols-[1fr_300px] grid-rows-[64px_1fr]">
+    <div className="h-screen w-screen bg-[#09090b] text-[#fafafa] font-sans">
       <Header
         view={view}
         onViewChange={setView}
@@ -84,7 +90,7 @@ export function App() {
       />
 
       {view === 'trade' && (
-        <>
+        <div className="grid h-[calc(100vh-64px)] grid-cols-[1fr_300px]">
           <main className="flex flex-col overflow-hidden bg-[#09090b]">
             <div className="flex items-center justify-between border-b border-zinc-800 bg-[#09090b] overflow-x-auto scrollbar-none shrink-0">
               <div className="flex items-center">
@@ -169,57 +175,26 @@ export function App() {
             onPlaceOrder={placeOrder}
             symbol={activeSymbol.replace('/', '')}
           />
-        </>
+        </div>
       )}
 
       {view === 'backtest' && (
-        <main className="col-span-1 flex flex-col items-center justify-center text-center p-8">
+        <div className="h-[calc(100vh-64px)] flex flex-col items-center justify-center text-center p-8">
           <FlaskConical size={64} className="text-zinc-600 mb-4" />
           <h2 className="text-2xl font-bold text-white mb-2">Backtest</h2>
           <p className="text-zinc-400 max-w-md">
             Run historical simulations to validate your trading strategies.
             Configure your strategy and test it against past market data.
           </p>
-        </main>
+        </div>
       )}
 
       {view === 'script' && (
-        <>
-          <aside className="border-r border-zinc-800 p-4 bg-zinc-950/50 flex flex-col">
-            <div className="flex items-center gap-2 mb-6 px-2">
-              <LayoutPanelLeft size={18} className="text-zinc-400" />
-              <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-500">AI Assistant</h2>
-            </div>
-            <div className="flex-1 space-y-4 overflow-y-auto px-2">
-              <div className="bg-zinc-900/50 border border-zinc-800 p-3 rounded-lg text-sm text-zinc-300">
-                Welcome to Pen Script. I can help you build trading strategies. Ask me to create an indicator, strategy, or explain market patterns.
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-zinc-800">
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Ask AI anything..."
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-          </aside>
-
-          <main className="col-span-1 flex flex-col">
-            <div className="flex items-center gap-2 p-4 border-b border-zinc-800">
-              <Code size={18} className="text-zinc-400" />
-              <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-500">Strategy Script</h2>
-            </div>
-            <div className="flex-1 bg-zinc-950 p-4 overflow-auto">
-              <textarea
-                className="w-full h-full bg-transparent text-zinc-300 font-mono text-sm resize-none focus:outline-none"
-                placeholder="# Write your strategy here...&#10;&#10;def on_tick(price):&#10;    if price < 50000:&#10;        buy(0.1)&#10;    elif price > 60000:&#10;        sell(0.1)"
-                spellCheck={false}
-              />
-            </div>
-          </main>
-        </>
+        <AIChat 
+          symbol={activeSymbol.replace('/', '')} 
+          timeframe={formatTimeframe(timeframe)}
+          onApplyCode={handleApplyCode}
+        />
       )}
 
       <WebhookSettings

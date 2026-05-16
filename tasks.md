@@ -23,20 +23,20 @@
   - `[x]` Implement interactive chart lines for drag-and-drop TP/SL management
   - `[x]` Add Close/Edit trade functionality (UI & Backend)
 
-- `[/]` **Phase 3: Python Execution Engine & Webhooks**
-  - `[ ]` Integrate `pyo3` into the Rust backend to embed Python
-  - `[ ]` Create data bridge: call Python `on_tick(price)` on every live tick
-  - `[ ]` Expose Rust `buy()` and `sell()` functions to Python
-  - `[ ]` Integrate `reqwest` to dispatch JSON payloads to Webhook URLs
-  - `[ ]` Integrate Monaco Editor component into the frontend
-  - `[ ]` Add "Deploy Strategy" button to send code to Rust backend
-  - `[ ]` Build Webhook configuration UI (URL and Secret Token)
+- `[x]` **Phase 3: Python Execution Engine & Webhooks**
+  - `[x]` Integrate `pyo3` into the Rust backend to embed Python
+  - `[x]` Create data bridge: call Python `on_tick(price)` on every live tick
+  - `[x]` Expose Rust `buy()` and `sell()` functions to Python
+  - `[x]` Integrate `reqwest` to dispatch JSON payloads to Webhook URLs
+  - `[x]` Integrate Monaco Editor component into the frontend
+  - `[x]` Add "Deploy Strategy" button to send code to Rust backend
+  - `[x]` Build Webhook configuration UI (URL and Secret Token)
 
-- `[ ]` **Phase 4: Persistence & AI**
-  - `[ ]` Set up PostgreSQL schema with `sqlx` migrations
-  - `[ ]` Implement endpoints to save/load trade histories and backtest results
-  - `[ ]` Implement autosave to dump open paper trades state to Postgres
-  - `[ ]` Set up API proxy for AI provider (to hide keys)
-  - `[ ]` Build AI Chat interface in the left sidebar
-  - `[ ]` Wire chat input to the AI API proxy
-  - `[ ]` Implement "Apply Code" button logic to inject AI code into Monaco Editor
+- `[x]` **Phase 4: Persistence & AI**
+  - `[x]` Set up PostgreSQL schema with `sqlx` migrations
+  - `[x]` Implement endpoints to save/load trade histories and backtest results
+  - `[x]` Implement autosave to dump open paper trades state to Postgres
+  - `[x]` Set up API proxy for AI provider (to hide keys)
+  - `[x]` Build AI Chat interface in the left sidebar
+  - `[x]` Wire chat input to the AI API proxy
+  - `[x]` Implement "Apply Code" button logic to inject AI code into Monaco Editor
