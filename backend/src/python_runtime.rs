@@ -1,7 +1,7 @@
 use pyo3::{prelude::*, types::PyDict, types::PyList};
 use std::sync::{Arc, Mutex};
 
-const MAX_CANDLES: usize = 200;
+const MAX_CANDLES: usize = 1000;
 
 #[derive(Clone, Debug)]
 pub struct PythonSignal {
