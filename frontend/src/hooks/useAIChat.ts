@@ -1,26 +1,22 @@
 import { useCallback, useRef } from 'react';
 import { useAIChatStore, AVAILABLE_MODELS } from '../stores/aiChatStore';
 
-export function useAIChat(symbol: string, timeframe: string) {
-  const {
-    updateContent,
-    setStreaming,
-    clearContent,
-    addUserMessage,
-    addAssistantMessage,
-  } = useAIChatStore();
-
+export function useAIChat() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const sendMessage = useCallback(async (prompt: string) => {
+  const sendMessage = useCallback(async (prompt: string, symbol: string, timeframe: string, modelId?: string) => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     abortControllerRef.current = new AbortController();
 
-    clearContent();
-    addUserMessage(prompt);
-    setStreaming(true);
+    const state = useAIChatStore.getState();
+    const session = state.sessions.find(s => s.id === state.currentSessionId);
+    const history = session?.messages || [];
+
+    state.clearContent();
+    state.addUserMessage(prompt);
+    state.setStreaming(true);
 
     let messageAdded = false;
     let content = '';
@@ -30,8 +26,11 @@ export function useAIChat(symbol: string, timeframe: string) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: prompt }],
-          models: [AVAILABLE_MODELS[0].id],
+          messages: [
+            ...history.map(m => ({ role: m.role, content: m.content })),
+            { role: 'user', content: prompt },
+          ],
+          models: [modelId || AVAILABLE_MODELS[0].id],
           symbol,
           timeframe,
         }),
@@ -59,30 +58,29 @@ export function useAIChat(symbol: string, timeframe: string) {
 
         for (const line of lines) {
           try {
-            // Strip SSE "data: " prefix if present
             const jsonStr = line.startsWith('data: ') ? line.slice(6) : line;
             const data = JSON.parse(jsonStr);
 
             if (data.tab_index !== undefined && data.error) {
               console.error('AI model error:', data.error);
-              addAssistantMessage('System', `Model error: ${data.error}`, false, undefined);
+              state.addAssistantMessage('System', `Model error: ${data.error}`, false, undefined);
               messageAdded = true;
               continue;
             }
 
             if (data.delta !== undefined) {
               content += data.delta;
-              updateContent(content, true);
+              state.updateContent(content, true);
             }
 
             if (data.is_done) {
-              setStreaming(false);
+              state.setStreaming(false);
             }
 
             if (data.content !== undefined && data.model !== undefined) {
               content = data.content;
-              updateContent(content, false);
-              addAssistantMessage(data.model, data.content, data.has_code || false, data.extracted_code);
+              state.updateContent(content, false);
+              state.addAssistantMessage(data.model, data.content, data.has_code || false, data.extracted_code);
               messageAdded = true;
             }
           } catch {
@@ -91,29 +89,29 @@ export function useAIChat(symbol: string, timeframe: string) {
         }
       }
 
-      // If stream ended without a final content+model event, add message from accumulated deltas
       if (content && !messageAdded) {
-        addAssistantMessage(AVAILABLE_MODELS[0].name, content, false, undefined);
+        const model = AVAILABLE_MODELS.find(m => m.id === modelId);
+        state.addAssistantMessage(model?.name || 'Assistant', content, false, undefined);
       }
 
-      setStreaming(false);
+      state.setStreaming(false);
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         console.log('Request aborted');
       } else {
         console.error('AI chat error:', error);
-        addAssistantMessage('System', `Error: ${(error as Error).message}`, false, undefined);
+        state.addAssistantMessage('System', `Error: ${(error as Error).message}`, false, undefined);
       }
-      setStreaming(false);
+      state.setStreaming(false);
     }
-  }, [symbol, timeframe, clearContent, addUserMessage, setStreaming, updateContent, addAssistantMessage]);
+  }, []);
 
   const stopGeneration = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      setStreaming(false);
+      useAIChatStore.getState().setStreaming(false);
     }
-  }, [setStreaming]);
+  }, []);
 
   const getModelName = useCallback((modelId: string) => {
     const model = AVAILABLE_MODELS.find(m => m.id === modelId);

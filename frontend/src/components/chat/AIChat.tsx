@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useAIChatStore, AVAILABLE_MODELS } from '../../stores/aiChatStore';
 import { useAIChat } from '../../hooks/useAIChat';
-import { Send, Square, ChevronDown, Copy, Play, Trash2, History, Bot } from 'lucide-react';
+import { Send, Square, ChevronDown, Copy, Plus, Trash2, History, Bot, Edit3, Check, X } from 'lucide-react';
 
 interface AIChatProps {
   symbol: string;
@@ -14,26 +14,53 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
   const [showHistory, setShowHistory] = useState(true);
   const [selectedModel, setSelectedModel] = useState(AVAILABLE_MODELS[0].id);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-  
-  const { 
-    messages, 
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  const {
+    sessions,
+    currentSessionId,
     currentContent,
     isStreaming,
-    clearContent, 
-    newSession 
+    clearContent,
+    newSession,
+    deleteSession,
+    renameSession,
+    switchSession,
   } = useAIChatStore();
-  
-  const { sendMessage, stopGeneration, getModelName } = useAIChat(symbol, timeframe);
+
+  const currentSession = useMemo(() => sessions.find(s => s.id === currentSessionId), [sessions, currentSessionId]);
+  const currentMessages = currentSession?.messages ?? [];
+
+  const { sendMessage, stopGeneration: stop, getModelName } = useAIChat();
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentContent, messages]);
+  }, [currentContent, currentSession?.messages.length]);
+
+  useEffect(() => {
+    if (renamingId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingId]);
+
+  useEffect(() => {
+    if (sessions.length === 0) {
+      newSession();
+    }
+  }, [sessions.length, newSession]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && !isStreaming) {
-      sendMessage(input);
+      // Ensure a session exists
+      if (!currentSessionId && sessions.length === 0) {
+        newSession();
+      }
+      sendMessage(input.trim(), symbol, timeframe, selectedModel);
       setInput('');
     }
   };
@@ -43,6 +70,32 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
     setInput('');
   };
 
+  const handleDelete = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (sessions.length <= 1) {
+      newSession();
+    }
+    deleteSession(id);
+    setRenamingId(null);
+  };
+
+  const handleStartRename = (e: React.MouseEvent, id: string, currentName: string) => {
+    e.stopPropagation();
+    setRenamingId(id);
+    setRenameValue(currentName);
+  };
+
+  const handleFinishRename = () => {
+    if (renamingId && renameValue.trim()) {
+      renameSession(renamingId, renameValue.trim());
+    }
+    setRenamingId(null);
+  };
+
+  const handleCancelRename = () => {
+    setRenamingId(null);
+  };
+
   return (
     <div className="flex h-full bg-[#09090b] text-[#fafafa] font-sans">
       {/* History Sidebar */}
@@ -50,26 +103,65 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
           <div className="flex items-center gap-2">
             <History size={16} className="text-zinc-400" />
-            <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-500">History</h2>
+            <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-500">Sessions</h2>
           </div>
           <button onClick={handleNewChat} className="p-1.5 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white transition-colors" title="New Chat">
-            <Play size={14} />
+            <Plus size={14} />
           </button>
         </div>
-        
+
         <div className="flex-1 overflow-y-auto">
-          {messages.filter(m => m.role === 'user').map((msg) => (
-            <button
-              key={msg.id}
-              onClick={() => setInput(msg.content)}
-              className="w-full px-4 py-3 text-left text-xs text-zinc-400 hover:bg-zinc-800/50 hover:text-white transition-colors border-b border-zinc-800/50 truncate"
-            >
-              {msg.content.substring(0, 60)}{msg.content.length > 60 ? '...' : ''}
-            </button>
-          ))}
-          {messages.filter(m => m.role === 'user').length === 0 && (
-            <div className="px-4 py-8 text-center text-xs text-zinc-600">No chat history yet</div>
+          {sessions.length === 0 && (
+            <div className="px-4 py-8 text-center text-xs text-zinc-600">No sessions yet</div>
           )}
+          {sessions.map((session) => (
+            <div
+              key={session.id}
+              onClick={() => { switchSession(session.id); setRenamingId(null); }}
+              className={`group flex items-center gap-2 px-3 py-2.5 text-left text-xs cursor-pointer transition-colors border-b border-zinc-800/50 ${
+                session.id === currentSessionId
+                  ? 'bg-zinc-800/60 text-white'
+                  : 'text-zinc-400 hover:bg-zinc-800/30 hover:text-zinc-200'
+              }`}
+            >
+              {renamingId === session.id ? (
+                <div className="flex items-center gap-1 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    ref={renameInputRef}
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleFinishRename();
+                      if (e.key === 'Escape') handleCancelRename();
+                    }}
+                    className="flex-1 bg-zinc-700 border border-zinc-600 rounded px-1.5 py-0.5 text-xs text-white outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <button onClick={handleFinishRename} className="p-0.5 hover:text-green-400 shrink-0"><Check size={12} /></button>
+                  <button onClick={handleCancelRename} className="p-0.5 hover:text-red-400 shrink-0"><X size={12} /></button>
+                </div>
+              ) : (
+                <>
+                  <span className="flex-1 truncate">{session.name}</span>
+                  <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <button
+                      onClick={(e) => handleStartRename(e, session.id, session.name)}
+                      className="p-0.5 hover:text-blue-400"
+                      title="Rename"
+                    >
+                      <Edit3 size={12} />
+                    </button>
+                    <button
+                      onClick={(e) => handleDelete(e, session.id)}
+                      className="p-0.5 hover:text-red-400"
+                      title="Delete"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 
@@ -86,10 +178,13 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
             <Bot size={18} className="text-zinc-400" />
             <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-500">AI Assistant</h2>
             <span className="text-[10px] text-zinc-600 bg-zinc-800 px-2 py-0.5 rounded">{symbol} {timeframe}</span>
+            {currentSession && currentSession.messages.length > 0 && (
+              <span className="text-[10px] text-zinc-600 truncate max-w-[200px]">{currentSession.name}</span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <button onClick={handleNewChat} className="p-1.5 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white transition-colors" title="New Chat">
-              <Play size={14} />
+              <Plus size={14} />
             </button>
             <button onClick={clearContent} className="p-1.5 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white transition-colors" title="Clear">
               <Trash2 size={14} />
@@ -108,7 +203,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
               <span>{getModelName(selectedModel)}</span>
               <ChevronDown size={12} />
             </button>
-            
+
             {modelDropdownOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setModelDropdownOpen(false)} />
@@ -133,12 +228,12 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
         {/* Chat Messages - Scrollable */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Welcome Message */}
-          {messages.length === 0 && !currentContent && (
+          {currentMessages.length === 0 && !currentContent && (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <Bot size={48} className="text-zinc-600 mb-4" />
               <h3 className="text-lg font-medium text-white mb-2">Welcome to Pen Script</h3>
               <p className="text-sm text-zinc-400 max-w-md">
-                I can help you analyze charts, create trading strategies, explain indicators, 
+                I can help you analyze charts, create trading strategies, explain indicators,
                 and improve your trading decisions. Just ask!
               </p>
               <div className="mt-4 flex flex-wrap gap-2 justify-center max-w-lg">
@@ -156,7 +251,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
           )}
 
           {/* Message List */}
-          {messages.map((msg) => (
+          {currentMessages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] rounded-lg p-4 ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-200'}`}>
                 <div className="text-xs font-medium mb-1 opacity-70">{msg.role === 'user' ? 'You' : msg.model || 'Assistant'}</div>
@@ -208,7 +303,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
               disabled={isStreaming}
             />
             {isStreaming ? (
-              <button type="button" onClick={stopGeneration} className="p-3 bg-red-600 hover:bg-red-700 rounded-lg transition-colors">
+              <button type="button" onClick={stop} className="p-3 bg-red-600 hover:bg-red-700 rounded-lg transition-colors">
                 <Square size={18} className="text-white" />
               </button>
             ) : (

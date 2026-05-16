@@ -20,14 +20,22 @@ export interface AIMessage {
   timestamp: number;
 }
 
-interface AIChatState {
-  sessionId: string;
+export interface ChatSession {
+  id: string;
+  name: string;
   messages: AIMessage[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface AIChatState {
+  sessions: ChatSession[];
+  currentSessionId: string;
   currentContent: string;
   isStreaming: boolean;
   hasCode: boolean;
   extractedCode?: string;
-  
+
   updateContent: (content: string, isStreaming?: boolean) => void;
   updateCode: (hasCode: boolean, extractedCode?: string) => void;
   setStreaming: (isStreaming: boolean) => void;
@@ -35,7 +43,11 @@ interface AIChatState {
   addUserMessage: (content: string) => void;
   addAssistantMessage: (model: string, content: string, hasCode: boolean, extractedCode?: string) => void;
   setLoading: (loading: boolean) => void;
-  newSession: () => void;
+
+  newSession: () => string;
+  deleteSession: (id: string) => void;
+  renameSession: (id: string, name: string) => void;
+  switchSession: (id: string) => void;
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
@@ -43,8 +55,8 @@ const generateId = () => Math.random().toString(36).substring(2, 15);
 export const useAIChatStore = create<AIChatState>()(
   persist(
     (set) => ({
-      sessionId: generateId(),
-      messages: [],
+      sessions: [],
+      currentSessionId: '',
       currentContent: '',
       isStreaming: false,
       hasCode: false,
@@ -63,19 +75,36 @@ export const useAIChatStore = create<AIChatState>()(
         set({ currentContent: '', isStreaming: false, hasCode: false, extractedCode: undefined }),
 
       addUserMessage: (content) =>
-        set((state) => ({
-          messages: [...state.messages, {
+        set((state) => {
+          const session = state.sessions.find(s => s.id === state.currentSessionId);
+          if (!session) return state;
+          const newMsg: AIMessage = {
             id: generateId(),
             role: 'user',
             content,
             hasCode: false,
             timestamp: Date.now(),
-          }],
-        })),
+          };
+          const firstUserMsg = session.messages.length === 0;
+          const name = firstUserMsg
+            ? content.replace(/\n/g, ' ').substring(0, 50).trim() || 'New Chat'
+            : session.name;
+          const updated = {
+            ...session,
+            name,
+            messages: [...session.messages, newMsg],
+            updatedAt: Date.now(),
+          };
+          return {
+            sessions: state.sessions.map(s => s.id === state.currentSessionId ? updated : s),
+          };
+        }),
 
       addAssistantMessage: (model, content, hasCode, extractedCode) =>
-        set((state) => ({
-          messages: [...state.messages, {
+        set((state) => {
+          const session = state.sessions.find(s => s.id === state.currentSessionId);
+          if (!session) return state;
+          const newMsg: AIMessage = {
             id: generateId(),
             role: 'assistant',
             model,
@@ -83,28 +112,75 @@ export const useAIChatStore = create<AIChatState>()(
             hasCode,
             extractedCode,
             timestamp: Date.now(),
-          }],
+          };
+          const updated = {
+            ...session,
+            messages: [...session.messages, newMsg],
+            updatedAt: Date.now(),
+          };
+          return {
+            sessions: state.sessions.map(s => s.id === state.currentSessionId ? updated : s),
+            currentContent: '',
+            isStreaming: false,
+            hasCode: false,
+            extractedCode: undefined,
+          };
+        }),
+
+      setLoading: (loading) => set({ isStreaming: loading }),
+
+      newSession: () => {
+        const id = generateId();
+        const newSess: ChatSession = {
+          id,
+          name: 'New Chat',
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        set((state) => ({
+          sessions: [...state.sessions, newSess],
+          currentSessionId: id,
           currentContent: '',
           isStreaming: false,
           hasCode: false,
           extractedCode: undefined,
+        }));
+        return id;
+      },
+
+      deleteSession: (id) =>
+        set((state) => {
+          const filtered = state.sessions.filter(s => s.id !== id);
+          let newCurrentId = state.currentSessionId;
+          if (state.currentSessionId === id) {
+            const idx = state.sessions.findIndex(s => s.id === id);
+            newCurrentId = filtered[Math.min(idx, filtered.length - 1)]?.id || (filtered.length > 0 ? filtered[filtered.length - 1].id : '');
+          }
+          return {
+            sessions: filtered,
+            currentSessionId: newCurrentId,
+          };
+        }),
+
+      renameSession: (id, name) =>
+        set((state) => ({
+          sessions: state.sessions.map(s =>
+            s.id === id ? { ...s, name } : s
+          ),
         })),
 
-      setLoading: (loading) => set({ isStreaming: loading }),
-
-      newSession: () => set({
-        sessionId: generateId(),
-        messages: [],
-        currentContent: '',
-        isStreaming: false,
-        hasCode: false,
-        extractedCode: undefined,
-      }),
+      switchSession: (id) =>
+        set({ currentSessionId: id }),
     }),
     {
       name: 'tradefy-ai-chat',
       partialize: (state) => ({
-        messages: state.messages.slice(-50),
+        sessions: state.sessions.map(s => ({
+          ...s,
+          messages: s.messages.slice(-200),
+        })).slice(-50),
+        currentSessionId: state.currentSessionId,
       }),
     }
   )
