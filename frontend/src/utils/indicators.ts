@@ -1,5 +1,7 @@
 import type { Candle } from '../hooks/useMarketData';
 
+const API_URL = 'http://localhost:3000';
+
 export type IndicatorType = 'sma' | 'ema' | 'rsi' | 'macd' | 'bollinger' | 'custom';
 
 export interface IndicatorConfig {
@@ -180,21 +182,30 @@ export function calculateBollinger(
   return { upper, middle, lower };
 }
 
-export function calculateCustom(candles: Candle[], script: string): IndicatorValue[] {
+export async function evaluateCustomIndicator(candles: Candle[], script: string): Promise<IndicatorValue[]> {
   try {
-    const fn = new Function('candles', script);
-    const result = fn(candles);
-    if (Array.isArray(result)) {
-      return result as IndicatorValue[];
+    const res = await fetch(`${API_URL}/api/indicator/evaluate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        script,
+        candles: candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })),
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      console.error('Custom indicator error:', err.error);
+      return [];
     }
-    return [];
+    const data = await res.json();
+    return data.values || [];
   } catch (e) {
     console.error('Custom indicator error:', e);
     return [];
   }
 }
 
-export function resolveIndicatorLines(candles: Candle[], config: IndicatorConfig): IndicatorLine[] {
+function resolveSyncIndicatorLines(candles: Candle[], config: IndicatorConfig): IndicatorLine[] {
   switch (config.type) {
     case 'sma': {
       const values = calculateSMA(candles, config.period || 20);
@@ -229,9 +240,33 @@ export function resolveIndicatorLines(candles: Candle[], config: IndicatorConfig
         { id: `${config.id}-lower`, label: `BB Lower(${period})`, color: '#ef4444', values: lower },
       ];
     }
-    case 'custom': {
-      const values = calculateCustom(candles, config.script || '');
-      return [{ id: config.id, label: config.name || 'Custom', color: config.color, values }];
-    }
+    default:
+      return [];
   }
+}
+
+export async function resolveIndicatorLines(candles: Candle[], config: IndicatorConfig): Promise<IndicatorLine[]> {
+  if (config.type === 'custom') {
+    const values = await evaluateCustomIndicator(candles, config.script || '');
+    return [{ id: config.id, label: config.name || 'Custom', color: config.color, values }];
+  }
+  return resolveSyncIndicatorLines(candles, config);
+}
+
+export function loadCustomIndicators(): CustomIndicatorDef[] {
+  try {
+    const raw = localStorage.getItem('customIndicators');
+    if (!raw) return [];
+    return JSON.parse(raw) as CustomIndicatorDef[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomIndicator(def: CustomIndicatorDef) {
+  const list = loadCustomIndicators();
+  const idx = list.findIndex(d => d.id === def.id);
+  if (idx >= 0) list[idx] = def;
+  else list.push(def);
+  localStorage.setItem('customIndicators', JSON.stringify(list));
 }

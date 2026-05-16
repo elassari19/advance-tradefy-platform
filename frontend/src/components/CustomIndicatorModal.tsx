@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Save, Play, AlertCircle, CheckCircle } from 'lucide-react';
 import type { CustomIndicatorDef } from '../utils/indicators';
 
+const API_URL = 'http://localhost:3000';
+
 interface CustomIndicatorModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -9,19 +11,16 @@ interface CustomIndicatorModalProps {
   editDef?: CustomIndicatorDef | null;
 }
 
-const DEFAULT_SCRIPT = `// Return array of {time, value}
-// candles: [{time: number, open, high, low, close}]
-const result = [];
-for (let i = 0; i < candles.length; i++) {
-  const c = candles[i];
-  // Example: price delta
-  const prev = candles[i - 1];
-  result.push({
-    time: c.time,
-    value: prev ? c.close - prev.close : 0,
-  });
-}
-return result;
+const DEFAULT_SCRIPT = `def run(candles):
+    """candles: list of {time, open, high, low, close}
+    Return list of {time, value}
+    """
+    result = []
+    for i, c in enumerate(candles):
+        prev = candles[i-1] if i > 0 else None
+        value = c["close"] - prev["close"] if prev else 0
+        result.append({"time": c["time"], "value": value})
+    return result
 `;
 
 export const CustomIndicatorModal: React.FC<CustomIndicatorModalProps> = ({ isOpen, onClose, onSave, editDef }) => {
@@ -29,6 +28,7 @@ export const CustomIndicatorModal: React.FC<CustomIndicatorModalProps> = ({ isOp
   const [script, setScript] = useState(DEFAULT_SCRIPT);
   const [error, setError] = useState('');
   const [testResult, setTestResult] = useState<string>('');
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     if (editDef) {
@@ -44,7 +44,7 @@ export const CustomIndicatorModal: React.FC<CustomIndicatorModalProps> = ({ isOp
 
   if (!isOpen) return null;
 
-  const handleTest = () => {
+  const handleTest = async () => {
     if (!name.trim()) { setError('Name is required'); return; }
     if (!script.trim()) { setError('Script is required'); return; }
 
@@ -56,19 +56,32 @@ export const CustomIndicatorModal: React.FC<CustomIndicatorModalProps> = ({ isOp
       close: 65000 + Math.random() * 100,
     }));
 
+    setTesting(true);
+    setError('');
+    setTestResult('');
+
     try {
-      const fn = new Function('candles', script);
-      const result = fn(mockCandles);
-      if (Array.isArray(result)) {
-        setTestResult(`✓ Returns ${result.length} values (${result.length > 0 ? 'valid' : 'empty'})`);
-        setError('');
+      const res = await fetch(`${API_URL}/api/indicator/evaluate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          script: script.trim(),
+          candles: mockCandles,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const values = data.values || [];
+        setTestResult(`✓ Returns ${values.length} values (${values.length > 0 ? 'valid' : 'empty'})`);
       } else {
-        setTestResult('✗ Script did not return an array');
-        setError('Return value must be an array of {time, value}');
+        setTestResult(`✗ Error: ${data.error}`);
+        setError(data.error);
       }
     } catch (e: any) {
       setTestResult(`✗ Error: ${e.message}`);
       setError(e.message);
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -113,19 +126,19 @@ export const CustomIndicatorModal: React.FC<CustomIndicatorModalProps> = ({ isOp
 
           <div>
             <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">
-              Script (JavaScript)
+              Script (Python)
             </label>
             <div className="relative">
               <textarea
                 value={script}
                 onChange={(e) => setScript(e.target.value)}
                 className="w-full h-48 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-blue-500 resize-none"
-                placeholder="// Write your indicator logic here..."
+                placeholder="# Write your indicator logic here..."
                 spellCheck={false}
               />
             </div>
             <p className="mt-1 text-[10px] text-zinc-600">
-              Receives <code className="text-zinc-400">candles</code> (array of &#123;time, open, high, low, close&#125;). Return an array of &#123;time, value&#125;.
+              Define a <code className="text-zinc-400">def run(candles):</code> function that returns a list of <code className="text-zinc-400">&#123;"time": ..., "value": ...&#125;</code>.
             </p>
           </div>
 
@@ -147,10 +160,11 @@ export const CustomIndicatorModal: React.FC<CustomIndicatorModalProps> = ({ isOp
         <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-zinc-800">
           <button
             onClick={handleTest}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors"
+            disabled={testing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
           >
             <Play size={12} />
-            Test
+            {testing ? 'Running...' : 'Test'}
           </button>
           <button
             onClick={handleSave}

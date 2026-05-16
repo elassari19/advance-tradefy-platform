@@ -1,4 +1,5 @@
 mod ai;
+mod indicator;
 mod models;
 mod python_runtime;
 mod simulator;
@@ -108,6 +109,7 @@ async fn main() {
         .route("/api/strategy/active", get(get_active_strategies))
         .route("/api/webhooks", get(get_webhooks).post(update_webhooks))
         .route("/api/history", get(get_history))
+        .route("/api/indicator/evaluate", post(evaluate_indicator_handler))
         .route("/api/ai/chat", post(ai_chat))
         .layer(cors)
         .with_state(app_state);
@@ -116,7 +118,10 @@ async fn main() {
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     tracing::info!("listening on {}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.set_reuseaddr(true).unwrap();
+    socket.bind(addr).unwrap();
+    let listener = socket.listen(1024).unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -352,6 +357,15 @@ async fn get_history(
         .collect();
 
     Ok(Json(candles))
+}
+
+async fn evaluate_indicator_handler(
+    Json(payload): Json<indicator::EvaluateRequest>,
+) -> Result<Json<indicator::EvaluateResponse>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    match indicator::evaluate_indicator(&payload.script, &payload.candles) {
+        Ok(resp) => Ok(Json(resp)),
+        Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e })))),
+    }
 }
 
 async fn ai_chat(

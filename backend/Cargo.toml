@@ -20,5 +20,5 @@ chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
 regex = "1.10"
 async-stream = "0.3"
-pyo3 = "0.20"
+pyo3 = { version = "0.20", features = ["auto-initialize"] }
 bytes = "1.0"
