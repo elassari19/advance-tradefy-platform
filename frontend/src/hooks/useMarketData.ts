@@ -12,6 +12,7 @@ export interface Candle {
   high: number;
   low: number;
   close: number;
+  volume?: number;
 }
 
 const API_URL = 'http://localhost:3000';
@@ -26,7 +27,8 @@ function useMarketDataForSymbol(symbol: string, timeframe: number) {
   const [updateCount, setUpdateCount] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const ws = useRef<WebSocket | null>(null);
+  const tickWs = useRef<WebSocket | null>(null);
+  const candleWs = useRef<WebSocket | null>(null);
   const pendingCandlesRef = useRef<Map<number, Candle>>(new Map());
   const timeframeRef = useRef(timeframe);
   const mountedRef = useRef(true);
@@ -71,14 +73,14 @@ function useMarketDataForSymbol(symbol: string, timeframe: number) {
     setIsInitializing(true);
     fetchHistory(symbol, timeframe);
 
-    const connect = () => {
-      ws.current = new WebSocket('ws://localhost:3000/ws/live');
+    const connectTick = () => {
+      tickWs.current = new WebSocket('ws://localhost:3000/ws/live');
 
-      ws.current.onopen = () => {
+      tickWs.current.onopen = () => {
         if (mountedRef.current) setIsConnected(true);
       };
 
-      ws.current.onmessage = (event) => {
+      tickWs.current.onmessage = (event) => {
         if (!mountedRef.current) return;
         try {
           const tick: Tick = JSON.parse(event.data);
@@ -96,7 +98,7 @@ function useMarketDataForSymbol(symbol: string, timeframe: number) {
             current.low = Math.min(current.low, tick.price);
             current.close = tick.price;
           } else {
-            pendingCandlesRef.current.set(candleStart, {
+            pendingCandlesRef.current.set(candleTime, {
               time: candleTime,
               open: tick.price,
               high: tick.price,
@@ -115,23 +117,67 @@ function useMarketDataForSymbol(symbol: string, timeframe: number) {
         }
       };
 
-      ws.current.onclose = () => {
+      tickWs.current.onclose = () => {
         if (mountedRef.current) {
           setIsConnected(false);
-          setTimeout(connect, 3000);
+          setTimeout(connectTick, 3000);
         }
       };
 
-      ws.current.onerror = () => {
-        if (mountedRef.current) ws.current?.close();
+      tickWs.current.onerror = () => {
+        if (mountedRef.current) tickWs.current?.close();
       };
     };
 
-    connect();
+    const connectCandle = () => {
+      candleWs.current = new WebSocket('ws://localhost:3000/ws/candles');
+
+      candleWs.current.onmessage = (event) => {
+        if (!mountedRef.current) return;
+        try {
+          const raw: any = JSON.parse(event.data);
+          if (raw.symbol !== formatSymbol(symbol)) return;
+
+          const candle: Candle = {
+            time: Math.floor(raw.time / 1000),
+            open: raw.open,
+            high: raw.high,
+            low: raw.low,
+            close: raw.close,
+            volume: raw.volume,
+          };
+
+          const map = pendingCandlesRef.current;
+          map.set(candle.time, candle);
+
+          const candlesArray = Array.from(map.values())
+            .sort((a, b) => a.time - b.time)
+            .slice(-1000);
+          setCandles(candlesArray);
+          setUpdateCount(c => c + 1);
+        } catch (e) {
+          console.error('Error parsing candle data', e);
+        }
+      };
+
+      candleWs.current.onclose = () => {
+        if (mountedRef.current) {
+          setTimeout(connectCandle, 3000);
+        }
+      };
+
+      candleWs.current.onerror = () => {
+        if (mountedRef.current) candleWs.current?.close();
+      };
+    };
+
+    connectTick();
+    connectCandle();
 
     return () => {
       mountedRef.current = false;
-      ws.current?.close();
+      tickWs.current?.close();
+      candleWs.current?.close();
     };
   }, [symbol, timeframe, fetchHistory]);
 

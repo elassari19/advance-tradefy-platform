@@ -1,4 +1,4 @@
-use crate::models::{OrderRequest, Position, SimulatorState, Tick, TradeHistory, TradeSide};
+use crate::models::{Candle, OrderRequest, Position, SimulatorState, Tick, TradeHistory, TradeSide};
 use std::sync::Mutex;
 use uuid::Uuid;
 
@@ -93,6 +93,96 @@ impl SimulatorEngine {
                 pnl: pos.pnl,
                 opened_at: pos.opened_at,
                 closed_at: tick.time,
+                exit_reason: reason,
+            });
+        }
+
+        state.equity = state.balance + total_pnl;
+    }
+
+    pub fn process_candle(&self, candle: &Candle) {
+        let mut state = match self.state.lock() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+
+        let mut to_close = Vec::new();
+        let mut total_pnl = 0.0;
+
+        for (i, pos) in state.open_positions.iter_mut().enumerate() {
+            if pos.symbol != candle.symbol {
+                total_pnl += pos.pnl;
+                continue;
+            }
+
+            pos.current_price = candle.close;
+            pos.pnl = match pos.side {
+                TradeSide::Buy => (candle.close - pos.entry_price) * pos.quantity,
+                TradeSide::Sell => (pos.entry_price - candle.close) * pos.quantity,
+            };
+
+            total_pnl += pos.pnl;
+
+            let mut close_reason = None;
+            let mut exit_price = candle.close;
+
+            match pos.side {
+                TradeSide::Buy => {
+                    if let Some(sl) = pos.stop_loss {
+                        if candle.low <= sl {
+                            close_reason = Some("Stop Loss".to_string());
+                            exit_price = sl;
+                        }
+                    }
+                    if close_reason.is_none() {
+                        if let Some(tp) = pos.take_profit {
+                            if candle.high >= tp {
+                                close_reason = Some("Take Profit".to_string());
+                                exit_price = tp;
+                            }
+                        }
+                    }
+                }
+                TradeSide::Sell => {
+                    if let Some(sl) = pos.stop_loss {
+                        if candle.high >= sl {
+                            close_reason = Some("Stop Loss".to_string());
+                            exit_price = sl;
+                        }
+                    }
+                    if close_reason.is_none() {
+                        if let Some(tp) = pos.take_profit {
+                            if candle.low <= tp {
+                                close_reason = Some("Take Profit".to_string());
+                                exit_price = tp;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some(reason) = close_reason {
+                to_close.push((i, reason, exit_price));
+            }
+        }
+
+        for (idx, reason, exit_price) in to_close.into_iter().rev() {
+            let pos = state.open_positions.remove(idx);
+            let pnl = match pos.side {
+                TradeSide::Buy => (exit_price - pos.entry_price) * pos.quantity,
+                TradeSide::Sell => (pos.entry_price - exit_price) * pos.quantity,
+            };
+            state.balance += pnl;
+            state.history.push(TradeHistory {
+                id: pos.id,
+                symbol: pos.symbol,
+                side: pos.side,
+                entry_price: pos.entry_price,
+                exit_price,
+                quantity: pos.quantity,
+                pnl,
+                opened_at: pos.opened_at,
+                closed_at: candle.time,
                 exit_reason: reason,
             });
         }
