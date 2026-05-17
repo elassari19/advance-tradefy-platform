@@ -14,7 +14,7 @@ use ai::AIClient;
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, Query, State},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use indicators::{EvaluateBatchRequest, EvaluateBatchResponse, IndicatorPipeline, resolve_mtf};
@@ -24,6 +24,7 @@ use futures_util::{SinkExt, StreamExt};
 use models::{AIChatRequest, BacktestRequest, BinanceTicker, Candle, HistoryParams, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle};
 use simulator::SimulatorEngine;
 use strategy::StrategyEngine;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -32,6 +33,15 @@ use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CustomIndicatorDef {
+    id: String,
+    name: String,
+    script: String,
+    category: String,
+    created_at: u64,
+}
 
 struct AppState {
     tx: broadcast::Sender<Tick>,
@@ -43,6 +53,7 @@ struct AppState {
     aggregators: Arc<Mutex<HashMap<(String, u32), CandleAggregator>>>,
     ai_client: AIClient,
     db: Option<sqlx::PgPool>,
+    custom_indicators: Mutex<Vec<CustomIndicatorDef>>,
 }
 
 #[tokio::main]
@@ -128,6 +139,7 @@ async fn main() {
         aggregators,
         ai_client,
         db,
+        custom_indicators: Mutex::new(Vec::new()),
     });
 
     // Spawn Binance stream task
@@ -161,6 +173,9 @@ async fn main() {
         .route("/api/indicators/evaluate-batch", post(evaluate_indicators_batch))
         .route("/api/indicators/list", get(list_indicators))
         .route("/api/indicators/mtf/resolve", post(resolve_mtf_handler))
+        .route("/api/indicators/custom/save", post(save_custom_indicator))
+        .route("/api/indicators/custom/list", get(list_custom_indicators))
+        .route("/api/indicators/custom/:id", delete(delete_custom_indicator))
         .route("/api/backtest/run", post(run_backtest))
         .route("/api/backtest/save", post(save_backtest))
         .route("/api/backtest/list", get(list_backtests))
@@ -514,6 +529,51 @@ async fn resolve_mtf_handler(
 
 async fn list_indicators() -> Json<Vec<serde_json::Value>> {
     Json(indicators::list_available_indicators())
+}
+
+async fn save_custom_indicator(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let name = payload.get("name").and_then(|v| v.as_str()).unwrap_or("Untitled").to_string();
+    let script = payload.get("script").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let category = payload.get("category").and_then(|v| v.as_str()).unwrap_or("Custom").to_string();
+
+    if script.is_empty() {
+        return (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "script is required" })));
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let def = CustomIndicatorDef { id: id.clone(), name, script, category, created_at: now };
+    state.custom_indicators.lock().unwrap().push(def);
+
+    (axum::http::StatusCode::OK, Json(serde_json::json!({ "id": id })))
+}
+
+async fn list_custom_indicators(
+    State(state): State<Arc<AppState>>,
+) -> Json<Vec<CustomIndicatorDef>> {
+    let indicators = state.custom_indicators.lock().unwrap();
+    Json(indicators.clone())
+}
+
+async fn delete_custom_indicator(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let mut indicators = state.custom_indicators.lock().unwrap();
+    let len_before = indicators.len();
+    indicators.retain(|i| i.id != id);
+    if indicators.len() < len_before {
+        (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "deleted" })))
+    } else {
+        (axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Indicator not found" })))
+    }
 }
 
 async fn run_backtest(

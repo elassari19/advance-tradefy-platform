@@ -136,11 +136,11 @@
 
 ### Backend — Custom Indicators (Enhanced)
 
-- `[ ]` Enhance `POST /api/indicator/evaluate` to support multi-output
-- `[ ]` Inject `sma()`, `ema()`, `rsi()`, `macd()`, etc. into Python custom indicator runtime
-- `[ ]` Inject `plot()`, `plotshape()`, `hline()`, `bgcolor()` into Python runtime
-- `[ ]` Add `POST /api/indicators/custom/save` endpoint
-- `[ ]` Add `GET /api/indicators/custom/list` endpoint
+- `[x]` Enhance `POST /api/indicator/evaluate` to support multi-output
+- `[x]` Inject `sma()`, `ema()`, `rsi()`, `macd()`, etc. into Python custom indicator runtime
+- `[x]` Inject `plot()`, `plotshape()`, `hline()`, `bgcolor()` into Python runtime
+- `[x]` Add `POST /api/indicators/custom/save` endpoint
+- `[x]` Add `GET /api/indicators/custom/list` endpoint
 
 ### Frontend — Indicator Panel
 
