@@ -83,13 +83,26 @@ pub struct HistoryParams {
     pub limit: Option<u32>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HistoricalCandle {
     pub time: u64,
     pub open: f64,
     pub high: f64,
     pub low: f64,
     pub close: f64,
+    pub volume: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Candle {
+    pub time: u64,
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub close: f64,
+    pub volume: f64,
+    pub symbol: String,
+    pub is_closed: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -166,4 +179,70 @@ pub struct ChatMessageRecord {
     pub content: String,
     pub has_code: bool,
     pub extracted_code: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BacktestRequest {
+    pub strategy_code: String,
+    pub symbol: String,
+    pub timeframe: String,
+    pub start_time: u64,
+    pub end_time: u64,
+    pub initial_balance: f64,
+    pub commission: f64,
+    pub slippage: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BacktestTrade {
+    pub id: String,
+    pub side: String,
+    pub entry_price: f64,
+    pub exit_price: f64,
+    pub quantity: f64,
+    pub pnl: f64,
+    pub pnl_pct: f64,
+    pub opened_at: u64,
+    pub closed_at: u64,
+    pub exit_reason: String,
+    pub holding_bars: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EquityPoint {
+    pub bar_index: u32,
+    pub time: u64,
+    pub equity: f64,
+    pub balance: f64,
+    pub drawdown: f64,
+    pub drawdown_pct: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BacktestResultSummary {
+    pub initial_balance: f64,
+    pub final_balance: f64,
+    pub net_profit: f64,
+    pub net_profit_pct: f64,
+    pub total_trades: u32,
+    pub winning_trades: u32,
+    pub losing_trades: u32,
+    pub win_rate: f64,
+    pub max_drawdown: f64,
+    pub max_drawdown_pct: f64,
+    pub sharpe_ratio: f64,
+    pub profit_factor: f64,
+    pub avg_win: f64,
+    pub avg_loss: f64,
+    pub largest_win: f64,
+    pub largest_loss: f64,
+    pub avg_holding_bars: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BacktestResult {
+    pub summary: BacktestResultSummary,
+    pub trades: Vec<BacktestTrade>,
+    pub equity_curve: Vec<EquityPoint>,
+    pub request: BacktestRequest,
 }

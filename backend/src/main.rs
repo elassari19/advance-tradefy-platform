@@ -1,5 +1,8 @@
 mod ai;
+mod backtest;
+mod candle_aggregator;
 mod indicator;
+mod time_series;
 mod models;
 mod python_runtime;
 mod simulator;
@@ -8,15 +11,18 @@ mod webhooks;
 
 use ai::AIClient;
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Query, State},
+    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, Query, State},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
+use backtest::BacktestEngine;
+use candle_aggregator::CandleAggregator;
 use futures_util::{SinkExt, StreamExt};
-use models::{AIChatRequest, BinanceTicker, HistoryParams, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle};
+use models::{AIChatRequest, BacktestRequest, BinanceTicker, Candle, HistoryParams, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle};
 use simulator::SimulatorEngine;
 use strategy::StrategyEngine;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc};
@@ -27,11 +33,14 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 struct AppState {
     tx: broadcast::Sender<Tick>,
+    candle_tx: broadcast::Sender<Candle>,
     simulator: Arc<SimulatorEngine>,
     strategy: StrategyEngine,
     last_tick: Mutex<Option<Tick>>,
     webhook_configs: Mutex<Vec<WebhookConfig>>,
+    aggregators: Arc<Mutex<HashMap<(String, u32), CandleAggregator>>>,
     ai_client: AIClient,
+    db: Option<sqlx::PgPool>,
 }
 
 #[tokio::main]
@@ -61,8 +70,9 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer().with_target(false))
         .init();
 
-    // Set up broadcast channel
+    // Set up broadcast channels
     let (tx, _rx) = broadcast::channel(100);
+    let (candle_tx, _candle_rx) = broadcast::channel(100);
     let simulator = Arc::new(SimulatorEngine::new(10000.0)); // Initial $10k balance
     let strategy = StrategyEngine::new(simulator.clone());
     
@@ -74,13 +84,48 @@ async fn main() {
     tracing::info!("Google key: {}", if google_key.len() > 20 { "SET ({} chars)".to_string() } else { google_key.clone() });
     let ai_client = AIClient::new(openrouter_key, google_key);
     
+    // Initialize database pool
+    let db = match sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://hicham:password@localhost:5432/tradefy".to_string())).await {
+        Ok(pool) => {
+            tracing::info!("Connected to PostgreSQL database");
+            // Run migrations
+            for migration in &["migrations/001_create_chat_sessions.sql", "migrations/002_create_chat_messages.sql", "migrations/003_create_backtest_results.sql"] {
+                let sql = match tokio::fs::read_to_string(migration).await {
+                    Ok(content) => content,
+                    Err(_) => continue,
+                };
+                if let Err(e) = sqlx::raw_sql(&sql).execute(&pool).await {
+                    tracing::warn!("Migration {} warning: {}", migration, e);
+                } else {
+                    tracing::info!("Applied migration: {}", migration);
+                }
+            }
+            Some(pool)
+        }
+        Err(e) => {
+            tracing::warn!("Database not available: {}. Backtest save/load will be disabled.", e);
+            None
+        }
+    };
+
+    // Pre-create aggregator for default symbol/timeframe
+    let mut aggregators_map = HashMap::new();
+    aggregators_map.insert(
+        ("BTCUSDT".to_string(), 5u32),
+        CandleAggregator::new("BTCUSDT", 5),
+    );
+    let aggregators = Arc::new(Mutex::new(aggregators_map));
+    
     let app_state = Arc::new(AppState { 
         tx: tx.clone(),
+        candle_tx: candle_tx.clone(),
         simulator,
         strategy,
         last_tick: Mutex::new(None),
         webhook_configs: Mutex::new(Vec::new()),
+        aggregators,
         ai_client,
+        db,
     });
 
     // Spawn Binance stream task
@@ -100,6 +145,7 @@ async fn main() {
         .route("/", get(|| async { "Tradefy Backend is Live" }))
         .route("/health", get(|| async { "OK" }))
         .route("/ws/live", get(ws_handler))
+        .route("/ws/candles", get(ws_candles_handler))
         .route("/api/order", post(place_order))
         .route("/api/position/update", post(update_position))
         .route("/api/position/close", post(close_position))
@@ -110,6 +156,10 @@ async fn main() {
         .route("/api/webhooks", get(get_webhooks).post(update_webhooks))
         .route("/api/history", get(get_history))
         .route("/api/indicator/evaluate", post(evaluate_indicator_handler))
+        .route("/api/backtest/run", post(run_backtest))
+        .route("/api/backtest/save", post(save_backtest))
+        .route("/api/backtest/list", get(list_backtests))
+        .route("/api/backtest/:id", get(get_backtest_by_id))
         .route("/api/ai/chat", post(ai_chat))
         .layer(cors)
         .with_state(app_state);
@@ -150,14 +200,39 @@ async fn start_binance_stream(state: Arc<AppState>) {
                                 // Process tick in simulator
                                 state.simulator.process_tick(&tick);
 
-                                // Process tick in strategy engine
+                                // Feed tick into candle aggregators (must be before on_candle)
+                                let completed_candles = {
+                                    let mut aggregators = state.aggregators.lock().unwrap();
+                                    let mut all_completed = Vec::new();
+                                    for (_, agg) in aggregators.iter_mut() {
+                                        let completed = agg.process_tick(&tick);
+                                        all_completed.extend(completed);
+                                    }
+                                    all_completed
+                                };
+
+                                // Process candle-based strategy execution
                                 let webhook_configs = {
                                     let c = state.webhook_configs.lock().unwrap();
                                     c.clone()
                                 };
+                                if let Some(current_candle) = {
+                                    let aggregators = state.aggregators.lock().unwrap();
+                                    aggregators.get(&("BTCUSDT".to_string(), 5u32))
+                                        .and_then(|agg| agg.get_current_candle().cloned())
+                                } {
+                                    state.strategy.on_candle(&current_candle, webhook_configs.clone());
+                                }
+
+                                // Process tick-based strategy execution (backward compat)
                                 state.strategy.on_tick(tick.clone(), webhook_configs);
+
+                                // Broadcast completed candles to frontend
+                                for candle in &completed_candles {
+                                    let _ = state.candle_tx.send(candle.clone());
+                                }
                                 
-                                // Broadcast to frontend
+                                // Broadcast tick to frontend
                                 let _ = state.tx.send(tick);
                             }
                         }
@@ -187,6 +262,13 @@ async fn ws_handler(
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
+async fn ws_candles_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(|socket| handle_candle_socket(socket, state))
+}
+
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     tracing::info!("New frontend WebSocket connection");
     let mut rx = state.tx.subscribe();
@@ -198,6 +280,19 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
         }
     }
     tracing::info!("Frontend WebSocket connection closed");
+}
+
+async fn handle_candle_socket(mut socket: WebSocket, state: Arc<AppState>) {
+    tracing::info!("New candle WebSocket connection");
+    let mut rx = state.candle_tx.subscribe();
+
+    while let Ok(candle) = rx.recv().await {
+        let msg = serde_json::to_string(&candle).unwrap();
+        if socket.send(Message::Text(msg)).await.is_err() {
+            break;
+        }
+    }
+    tracing::info!("Candle WebSocket connection closed");
 }
 
 async fn place_order(
@@ -346,12 +441,14 @@ async fn get_history(
             let high = k.get(2)?.as_str()?.parse().ok()?;
             let low = k.get(3)?.as_str()?.parse().ok()?;
             let close = k.get(4)?.as_str()?.parse().ok()?;
+            let volume = k.get(5)?.as_str()?.parse().ok()?;
             Some(HistoricalCandle {
                 time: (open_time / 1000) as u64,
                 open,
                 high,
                 low,
                 close,
+                volume,
             })
         })
         .collect();
@@ -365,6 +462,208 @@ async fn evaluate_indicator_handler(
     match indicator::evaluate_indicator(&payload.script, &payload.candles) {
         Ok(resp) => Ok(Json(resp)),
         Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e })))),
+    }
+}
+
+async fn run_backtest(
+    _state: State<Arc<AppState>>,
+    Json(payload): Json<BacktestRequest>,
+) -> impl IntoResponse {
+    let engine = BacktestEngine::new(payload);
+    match engine.run().await {
+        Ok(result) => (axum::http::StatusCode::OK, Json(serde_json::json!(result))),
+        Err(e) => {
+            tracing::error!("Backtest error: {}", e);
+            (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e })))
+        }
+    }
+}
+
+async fn save_backtest(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let db = match &state.db {
+        Some(pool) => pool,
+        None => return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "Database not available" })),
+        ),
+    };
+
+    let result: &serde_json::Value = &payload;
+    let summary = &result["summary"];
+    let trades = &result["trades"];
+    let equity_curve = &result["equity_curve"];
+    let request = &result["request"];
+    let name = payload.get("name").and_then(|v| v.as_str()).unwrap_or("Untitled");
+
+    let trade_json = serde_json::to_string(trades).unwrap_or_default();
+    let equity_json = serde_json::to_string(equity_curve).unwrap_or_default();
+
+    let start_time = {
+        let st = request["start_time"].as_u64().unwrap_or(0);
+        chrono::DateTime::from_timestamp(st as i64, 0)
+            .unwrap_or_default()
+    };
+    let end_time = {
+        let et = request["end_time"].as_u64().unwrap_or(0);
+        chrono::DateTime::from_timestamp(et as i64, 0)
+            .unwrap_or_default()
+    };
+
+    match sqlx::query_scalar::<_, uuid::Uuid>(
+        r#"
+        INSERT INTO backtest_results (
+            strategy_name, symbol, timeframe, start_time, end_time,
+            initial_balance, final_balance, net_profit,
+            total_trades, winning_trades, losing_trades, win_rate,
+            max_drawdown, max_drawdown_pct, sharpe_ratio, profit_factor,
+            avg_win, avg_loss, trade_history, equity_curve, strategy_code
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        RETURNING id
+        "#,
+    )
+    .bind(name)
+    .bind(request["symbol"].as_str().unwrap_or(""))
+    .bind(request["timeframe"].as_str().unwrap_or(""))
+    .bind(start_time)
+    .bind(end_time)
+    .bind(summary["initial_balance"].as_f64().unwrap_or(0.0))
+    .bind(summary["final_balance"].as_f64().unwrap_or(0.0))
+    .bind(summary["net_profit"].as_f64().unwrap_or(0.0))
+    .bind(summary["total_trades"].as_i64().unwrap_or(0) as i32)
+    .bind(summary["winning_trades"].as_i64().unwrap_or(0) as i32)
+    .bind(summary["losing_trades"].as_i64().unwrap_or(0) as i32)
+    .bind(summary["win_rate"].as_f64().unwrap_or(0.0))
+    .bind(summary["max_drawdown"].as_f64().unwrap_or(0.0))
+    .bind(summary["max_drawdown_pct"].as_f64().unwrap_or(0.0))
+    .bind(summary["sharpe_ratio"].as_f64().unwrap_or(0.0))
+    .bind(summary["profit_factor"].as_f64().unwrap_or(0.0))
+    .bind(summary["avg_win"].as_f64().unwrap_or(0.0))
+    .bind(summary["avg_loss"].as_f64().unwrap_or(0.0))
+    .bind(&trade_json)
+    .bind(&equity_json)
+    .bind(request["strategy_code"].as_str().unwrap_or(""))
+    .fetch_one(db)
+    .await
+    {
+        Ok(id) => {
+            (axum::http::StatusCode::OK, Json(serde_json::json!({ "id": id.to_string() })))
+        }
+        Err(e) => {
+            tracing::error!("Failed to save backtest: {}", e);
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() })))
+        }
+    }
+}
+
+async fn get_backtest_by_id(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let db = match &state.db {
+        Some(pool) => pool,
+        None => return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "Database not available" })),
+        ),
+    };
+
+    let uuid = match uuid::Uuid::parse_str(&id) {
+        Ok(u) => u,
+        Err(_) => return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid ID format" })),
+        ),
+    };
+
+    match sqlx::query("SELECT * FROM backtest_results WHERE id = $1")
+        .bind(uuid)
+        .fetch_optional(db)
+        .await
+    {
+        Ok(Some(row)) => {
+            use sqlx::Row;
+            let result = serde_json::json!({
+                "id": row.get::<uuid::Uuid, _>("id").to_string(),
+                "strategy_name": row.get::<String, _>("strategy_name"),
+                "symbol": row.get::<String, _>("symbol"),
+                "timeframe": row.get::<String, _>("timeframe"),
+                "start_time": row.get::<chrono::DateTime<chrono::Utc>, _>("start_time"),
+                "end_time": row.get::<chrono::DateTime<chrono::Utc>, _>("end_time"),
+                "initial_balance": row.get::<f64, _>("initial_balance"),
+                "final_balance": row.get::<f64, _>("final_balance"),
+                "net_profit": row.get::<f64, _>("net_profit"),
+                "total_trades": row.get::<i32, _>("total_trades"),
+                "winning_trades": row.get::<i32, _>("winning_trades"),
+                "losing_trades": row.get::<i32, _>("losing_trades"),
+                "win_rate": row.get::<f64, _>("win_rate"),
+                "max_drawdown": row.get::<f64, _>("max_drawdown"),
+                "max_drawdown_pct": row.get::<f64, _>("max_drawdown_pct"),
+                "sharpe_ratio": row.get::<f64, _>("sharpe_ratio"),
+                "profit_factor": row.get::<f64, _>("profit_factor"),
+                "avg_win": row.get::<f64, _>("avg_win"),
+                "avg_loss": row.get::<f64, _>("avg_loss"),
+                "trade_history": serde_json::from_str::<serde_json::Value>(&row.get::<String, _>("trade_history")).unwrap_or_default(),
+                "equity_curve": serde_json::from_str::<serde_json::Value>(&row.get::<String, _>("equity_curve")).unwrap_or_default(),
+                "strategy_code": row.get::<String, _>("strategy_code"),
+                "created_at": row.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
+            });
+            (axum::http::StatusCode::OK, Json(result))
+        }
+        Ok(None) => (
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Backtest result not found" })),
+        ),
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn list_backtests(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let db = match &state.db {
+        Some(pool) => pool,
+        None => return Json(serde_json::json!({ "results": [], "error": "Database not available" })),
+    };
+
+    match sqlx::query(
+        r#"
+        SELECT id, strategy_name, symbol, timeframe, initial_balance, final_balance, net_profit, total_trades, win_rate, created_at
+        FROM backtest_results
+        ORDER BY created_at DESC
+        LIMIT 50
+        "#,
+    )
+    .fetch_all(db)
+    .await
+    {
+        Ok(rows) => {
+            use sqlx::Row;
+            let results: Vec<serde_json::Value> = rows.into_iter().map(|r| {
+                serde_json::json!({
+                    "id": r.get::<uuid::Uuid, _>("id").to_string(),
+                    "strategy_name": r.get::<String, _>("strategy_name"),
+                    "symbol": r.get::<String, _>("symbol"),
+                    "timeframe": r.get::<String, _>("timeframe"),
+                    "initial_balance": r.get::<f64, _>("initial_balance"),
+                    "final_balance": r.get::<f64, _>("final_balance"),
+                    "net_profit": r.get::<f64, _>("net_profit"),
+                    "total_trades": r.get::<i32, _>("total_trades"),
+                    "win_rate": r.get::<f64, _>("win_rate"),
+                    "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
+                })
+            }).collect();
+            Json(serde_json::json!({ "results": results }))
+        }
+        Err(e) => {
+            tracing::error!("Failed to list backtests: {}", e);
+            Json(serde_json::json!({ "results": [], "error": e.to_string() }))
+        }
     }
 }
 
