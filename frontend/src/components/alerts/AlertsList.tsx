@@ -124,6 +124,20 @@ export function AlertsList({ alerts, webhookLogs, onAdd, onEdit, onDelete, onTog
                             {alert.actions.filter(a => a.enabled).length} action(s)
                           </span>
                         )}
+                        {(() => {
+                          const logs = webhookLogs.filter(l => alert.actions.some(a => a.webhook_config_id && l.webhook_config_id === a.webhook_config_id));
+                          const recent = logs.length > 0 ? logs[logs.length - 1] : null;
+                          if (!recent) return null;
+                          const ok = recent.response_status && recent.response_status >= 200 && recent.response_status < 300;
+                          return (
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                              ok ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${ok ? 'bg-green-500' : 'bg-red-500'}`} />
+                              {ok ? recent.response_status : 'FAIL'}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">

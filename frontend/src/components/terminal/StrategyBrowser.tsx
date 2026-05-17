@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Loader2, FileCode, Download } from 'lucide-react';
+import { Search, Loader2, FileCode, Download, Trash2 } from 'lucide-react';
 
 interface SavedStrategy {
   id: string;
@@ -43,6 +43,21 @@ export const StrategyBrowser: React.FC<StrategyBrowserProps> = ({ isOpen, onClos
   const handleLoad = (s: SavedStrategy) => {
     onLoad(s.code);
     onClose();
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/strategy/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (res.ok) {
+        setStrategies(prev => prev.filter(s => s.id !== id));
+      }
+    } catch {
+      // silently fail
+    }
   };
 
   const filtered = strategies.filter(s =>
@@ -95,13 +110,21 @@ export const StrategyBrowser: React.FC<StrategyBrowserProps> = ({ isOpen, onClos
                     {new Date(s.created_at).toLocaleDateString()} &mdash; {s.code.slice(0, 80)}...
                   </div>
                 </div>
-                <button
-                  onClick={() => handleLoad(s)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded text-[10px] font-bold bg-blue-600 hover:bg-blue-500 text-white transition-colors opacity-0 group-hover:opacity-100 shrink-0"
-                >
-                  <Download size={10} />
-                  Load
-                </button>
+                <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => handleDelete(s.id)}
+                    className="flex items-center gap-1 px-2 py-1.5 rounded text-[10px] font-bold bg-red-600/20 hover:bg-red-600/40 text-red-400 transition-colors"
+                  >
+                    <Trash2 size={10} />
+                  </button>
+                  <button
+                    onClick={() => handleLoad(s)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded text-[10px] font-bold bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+                  >
+                    <Download size={10} />
+                    Load
+                  </button>
+                </div>
               </div>
             ))
           )}

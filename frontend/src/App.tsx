@@ -487,6 +487,8 @@ export function App() {
                     onSaveStrategy={handleSaveStrategy}
                     onLoadStrategy={handleLoadStrategy}
                     focusTab={focusTab}
+                    onRunBacktest={() => setView('backtest')}
+                    backtestRunning={backtestRunning}
                   />
                 </div>
               </div>

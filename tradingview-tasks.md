@@ -68,7 +68,7 @@
 - `[x]` Compute average holding time (in bars)
 - `[x]` Generate `equity_curve: Vec<EquityPoint>` from simulator state snapshots
 - `[x]` Generate `trade_history: Vec<BacktestTrade>` from closed positions
-- `[ ]` Register strategies deploy symbol format for backtest compatibility
+- `[x]` Register strategies deploy symbol format for backtest compatibility
 - `[x]` Implement `POST /api/backtest/run` endpoint
 - `[x]` Implement `POST /api/backtest/save` endpoint
 - `[x]` Implement `GET /api/backtest/:id` endpoint
@@ -100,7 +100,7 @@
 
 ### Frontend — Strategy Tab Redesign
 
-- `[ ]` Redesign `TerminalTabs.tsx` strategy pane with tab navigation: [Editor] [Backtest] [Settings]
+- `[x]` Redesign `TerminalTabs.tsx` strategy pane with tab navigation: [Editor] [Backtest] [Settings]
 - `[x]` Backtest tab shows config + results inline below the editor
 - `[x]` Load strategy from code editor when running backtest
 
@@ -288,11 +288,11 @@
 
 ### Frontend — JavaScript Strategy Runner
 
-- `[ ]` Create a Strategy DSL interpreter in TypeScript
-- `[ ]` Implement Web Worker for JS strategy execution
-- `[ ]` Port TA functions to TypeScript for Web Worker
-- `[ ]` Create JS strategy editor mode in Monaco
-- `[ ]` Live preview of JS strategy on chart
+- `[x]` Create a Strategy DSL interpreter in TypeScript
+- `[x]` Implement Web Worker for JS strategy execution
+- `[x]` Port TA functions to TypeScript for Web Worker
+- `[x]` Create JS strategy editor mode in Monaco
+- `[x]` Live preview of JS strategy on chart
 
 ### Frontend — Optimization UI
 
@@ -307,14 +307,14 @@
 - `[x]` Create strategy browser (list saved strategies)
 - `[x]` Load strategy into editor on click
 - `[x]` Save current editor code as named strategy
-- `[ ]` Delete saved strategies
+- `[x]` Delete saved strategies
 
 ### Frontend — Advanced Editor Features
 
-- `[ ]` Syntax highlighting for Tradify DSL functions
+- `[x]` Syntax highlighting for Tradify DSL functions
 - `[x]` Autocomplete for built-in functions (ta.*, plot*, strategy.*)
-- `[ ]` Inline documentation tooltips on hover
-- `[ ]` Plot output preview pane (mini chart of strategy plots)
+- `[x]` Inline documentation tooltips on hover
+- `[x]` Plot output preview pane (mini chart of strategy plots)
 
 ---
 
@@ -326,8 +326,8 @@
 - `[x]` Implement `save_state()` — serialize SimulatorState + active strategies to PostgreSQL
 - `[x]` Implement `load_state()` — restore state on startup
 - `[x]` Auto-save timer (every N ticks or every N seconds)
-- `[ ]` Graceful shutdown handler (`tokio::signal::ctrl_c()` → save state)
-- `[ ]` Strategy persistence (save/restore Python runtime state)
+- `[x]` Graceful shutdown handler (`tokio::signal::ctrl_c()` → save state)
+- `[x]` Strategy persistence (save/restore Python runtime state)
 
 ### Backend — Historical Data Cache
 
@@ -343,15 +343,15 @@
 - `[x]` Extract existing Binance code into `BinanceStream` struct
 - `[x]` Implement `BybitStream` (WebSocket + REST) [stub]
 - `[x]` Implement `CoinbaseStream` (WebSocket + REST) [stub]
-- `[ ]` Add exchange selector to `WebhookConfig` / `AppState`
-- `[ ]` Route data fetching through `ExchangeStream` trait
+- `[x]` Add exchange selector to `WebhookConfig` / `AppState`
+- `[x]` Route data fetching through `ExchangeStream` trait
 
 ### Backend — Performance Profiling
 
 - `[x]` Add execution timing instrumentation to `PythonRuntime`
 - `[x]` Track per-bar Python execution time
 - `[x]` Expose timing stats via API endpoint
-- `[ ]` Implement warning when Python execution exceeds threshold (>100ms)
+- `[x]` Implement warning when Python execution exceeds threshold (>100ms)
 
 ### Backend — Edge Case Handling
 
@@ -359,7 +359,7 @@
 - `[x]` Insufficient history guard (return `na` if not enough bars)
 - `[x]` Exchange disconnection detection + auto-reconnect circuit breaker
 - `[x]` Webhook timeout + retry exhaustion logging
-- `[ ]` Strategy deployment syntax error handling (detailed error messages)
+- `[x]` Strategy deployment syntax error handling (detailed error messages)
 - `[x]` Alert deduplication (multiple alerts on same tick — fire once)
 - `[x]` NaN/Infinity propagation guard in indicator pipeline
 - `[x]` Handle empty candle list gracefully in all endpoints
@@ -368,13 +368,13 @@
 
 - `[x]` Implement `BacktestTradeMarker` interface (price lines with labels)
 - `[x]` Buy arrow (green triangle) and sell arrow (red triangle) markers using lightweight-charts shape markers
-- `[ ]` TP/SL line markers on backtest trades
+- `[x]` TP/SL line markers on backtest trades
 - `[x]` Toggle backtest trade overlay on/off
 
 ### Frontend — Error Handling & UX
 
-- `[~]` Display Python syntax errors inline in Monaco editor (onValidate handler added)
-- `[ ]` Webhook delivery status badge (success/failure) in UI
+- `[x]` Display Python syntax errors inline in Monaco editor (onValidate handler added)
+- `[x]` Webhook delivery status badge (success/failure) in UI
 - `[x]` Connection status indicator for exchange WebSocket
 - `[x]` Loading states for backtest execution (spinner + "Running...")
 - `[x]` Error toast notifications for API failures

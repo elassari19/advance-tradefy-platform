@@ -60,6 +60,8 @@ pub struct TradeHistory {
     pub opened_at: u64,
     pub closed_at: u64,
     pub exit_reason: String,
+    pub take_profit: Option<f64>,
+    pub stop_loss: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -118,6 +120,8 @@ pub struct WebhookConfig {
     pub retry_count: u32,
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
+    #[serde(default = "default_exchange")]
+    pub exchange: String,
 }
 
 fn default_template() -> String {
@@ -127,6 +131,8 @@ fn default_template() -> String {
 fn default_retry_count() -> u32 { 3 }
 
 fn default_timeout_ms() -> u64 { 5000 }
+
+fn default_exchange() -> String { "binance".to_string() }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WebhookLog {
@@ -267,6 +273,8 @@ pub struct BacktestTrade {
     pub closed_at: u64,
     pub exit_reason: String,
     pub holding_bars: u64,
+    pub take_profit: Option<f64>,
+    pub stop_loss: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -343,4 +351,13 @@ pub struct SavedStrategy {
     pub timeframe: String,
     pub code: String,
     pub created_at: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavedStrategyState {
+    pub id: String,
+    pub symbol: String,
+    pub code: String,
+    pub state_type: String,
+    pub updated_at: u64,
 }

@@ -25,6 +25,8 @@ export interface BacktestTrade {
   closed_at: number;
   exit_reason: string;
   holding_bars: number;
+  take_profit: number | null;
+  stop_loss: number | null;
 }
 
 export interface EquityPoint {

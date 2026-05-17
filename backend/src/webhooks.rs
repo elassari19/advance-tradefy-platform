@@ -84,6 +84,7 @@ pub async fn dispatch_webhook(
         template: String::new(),
         retry_count: 3,
         timeout_ms: 5000,
+        exchange: "binance".to_string(),
     };
     dispatch_webhook_with_config(&config, &request, price).await;
 }

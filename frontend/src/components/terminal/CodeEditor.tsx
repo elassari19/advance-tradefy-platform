@@ -84,6 +84,24 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ symbol, code, isActive, 
   }, [symbol]);
 
   const handleEditorMount = useCallback((editor: any, monaco: any) => {
+    // Register Tradify DSL tokens for syntax highlighting
+    monaco.languages.setMonarchTokensProvider('python', {
+      tokenizer: {
+        root: [
+          [/@strategy\b/, 'keyword'],
+          [/\b(ta\.\w+)\b/, 'type.identifier'],
+          [/\b(strategy\.\w+)\b/, 'keyword'],
+          [/\b(open|high|low|close|volume)\b/, 'variable.predefined'],
+          [/\b(bar_index|timeframe\.period|syminfo\.tickerid)\b/, 'variable.predefined'],
+          [/\b(plot|plotshape|plotarrow|hline|bgcolor|fill)\b/, 'support.function'],
+          [/\b(buy|sell)\b/, 'keyword.control'],
+          [/\b(input|nz|iff|security)\b/, 'support.function'],
+          [/\b(strategy)\b/, 'keyword.namespace'],
+          [/\b(long|short)\b/, 'constant.language'],
+        ],
+      },
+    });
+
     monaco.languages.registerCompletionItemProvider('python', {
       triggerCharacters: ['.', '('],
       provideCompletionItems: (model: any, position: any) => {
@@ -105,6 +123,23 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ symbol, code, isActive, 
       },
     });
 
+    // Add hover documentation for DSL functions
+    monaco.languages.registerHoverProvider('python', {
+      provideHover: (model: any, position: any) => {
+        const word = model.getWordAtPosition(position);
+        if (!word) return null;
+        const suggestion = SUGGESTIONS.find(s => s.label === word.word);
+        if (!suggestion) return null;
+        return {
+          contents: [
+            { value: `**${suggestion.label}**` },
+            { value: suggestion.detail || '' },
+            { value: (suggestion as any).docs || '' },
+          ],
+        };
+      },
+    });
+
   }, []);
 
 
@@ -115,9 +150,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ symbol, code, isActive, 
       setStatus('success');
       setMessage(`Strategy deployed for ${symbol}`);
       setTimeout(() => setStatus('idle'), 3000);
-    } catch (err) {
+    } catch (err: any) {
       setStatus('error');
-      setMessage('Failed to deploy strategy');
+      const msg = err?.message || 'Failed to deploy strategy';
+      setMessage(msg);
     }
   };
 
@@ -226,6 +262,14 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ symbol, code, isActive, 
           onMount={handleEditorMount}
           onValidate={(markers: any[]) => {
             const errors = markers.filter((m: any) => m.severity === 8);
+            if (errors.length > 0) {
+              const first = errors[0];
+              setStatus('error');
+              setMessage(`Line ${first.startLineNumber}: ${first.message}`);
+            } else if (status === 'error') {
+              setStatus('idle');
+              setMessage('');
+            }
           }}
           options={{
             minimap: { enabled: false },

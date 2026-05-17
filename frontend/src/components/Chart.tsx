@@ -439,6 +439,8 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
       const sellKey = `bt-sell-${trade.id}`;
       const tpKey = `bt-tp-${trade.id}`;
       const slKey = `bt-sl-${trade.id}`;
+      const tpTargetKey = `bt-tp-target-${trade.id}`;
+      const slTargetKey = `bt-sl-target-${trade.id}`;
 
       if (trade.side === 'Buy') {
         try {
@@ -489,6 +491,36 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
             title: 'SL',
           });
           tradeMarkerPriceLinesRef.current.set(slKey, line);
+        } catch {}
+      }
+
+      // Draw TP target line (the intended take-profit level)
+      if (trade.take_profit != null) {
+        try {
+          const line = series.createPriceLine({
+            price: trade.take_profit,
+            color: '#22c55e',
+            lineStyle: 4,
+            lineWidth: 1,
+            axisLabelVisible: true,
+            title: 'TP Target',
+          });
+          tradeMarkerPriceLinesRef.current.set(tpTargetKey, line);
+        } catch {}
+      }
+
+      // Draw SL target line (the intended stop-loss level)
+      if (trade.stop_loss != null) {
+        try {
+          const line = series.createPriceLine({
+            price: trade.stop_loss,
+            color: '#ef4444',
+            lineStyle: 4,
+            lineWidth: 1,
+            axisLabelVisible: true,
+            title: 'SL Target',
+          });
+          tradeMarkerPriceLinesRef.current.set(slTargetKey, line);
         } catch {}
       }
     }

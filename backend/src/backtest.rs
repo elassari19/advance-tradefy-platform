@@ -190,6 +190,8 @@ impl BacktestEngine {
                 closed_at: t.closed_at,
                 exit_reason: t.exit_reason.clone(),
                 holding_bars,
+                take_profit: t.take_profit,
+                stop_loss: t.stop_loss,
             }
         }).collect();
 

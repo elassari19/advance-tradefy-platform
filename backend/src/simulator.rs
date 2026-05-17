@@ -94,6 +94,8 @@ impl SimulatorEngine {
                 opened_at: pos.opened_at,
                 closed_at: tick.time,
                 exit_reason: reason,
+                take_profit: pos.take_profit,
+                stop_loss: pos.stop_loss,
             });
         }
 
@@ -184,6 +186,8 @@ impl SimulatorEngine {
                 opened_at: pos.opened_at,
                 closed_at: candle.time,
                 exit_reason: reason,
+                take_profit: pos.take_profit,
+                stop_loss: pos.stop_loss,
             });
         }
 
@@ -219,6 +223,8 @@ impl SimulatorEngine {
                 opened_at: pos.opened_at,
                 closed_at: timestamp,
                 exit_reason: "Manual Close".to_string(),
+                take_profit: pos.take_profit,
+                stop_loss: pos.stop_loss,
             });
             Ok(())
         } else {

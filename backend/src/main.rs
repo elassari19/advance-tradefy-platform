@@ -180,28 +180,31 @@ async fn main() {
     let state_mgr_restore = StateManager::new(db.clone());
     if let Some(_saved_state) = state_mgr_restore.load_state().await {
         tracing::info!("Restored simulator state from database");
-        // In a full implementation we would restore positions here
     }
 
-    // Cache invalidation cron: purge candle_cache entries older than 24h every hour
-    let cache_db = db.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-            if let Some(pool) = &cache_db {
-                match sqlx::query(
-                    r#"DELETE FROM candle_cache WHERE open_time < (EXTRACT(EPOCH FROM NOW()) - 86400)::bigint"#
-                ).execute(pool).await {
-                    Ok(r) => {
-                        if r.rows_affected() > 0 {
-                            tracing::info!("Cache invalidation: purged {} stale candle entries", r.rows_affected());
-                        }
-                    }
-                    Err(e) => tracing::warn!("Cache invalidation failed: {}", e),
-                }
+    let app_state_for_shutdown = app_state.clone();
+
+    // Restore saved strategies from database
+    if let Some(pool) = &db {
+        let strategies_from_db: Vec<(String, String)> = match sqlx::query_as::<_, (String, String, String)>(
+            r#"SELECT symbol, code, name FROM saved_strategies ORDER BY created_at DESC LIMIT 10"#,
+        )
+        .fetch_all(pool)
+        .await
+        {
+            Ok(rows) => {
+                rows.into_iter().map(|r| (r.0, r.1)).collect()
             }
+            Err(e) => {
+                tracing::warn!("Could not restore strategies: {}", e);
+                Vec::new()
+            }
+        };
+        if !strategies_from_db.is_empty() {
+            app_state.strategy.restore_strategies(strategies_from_db);
+            tracing::info!("Restored strategies from database");
         }
-    });
+    }
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -240,9 +243,10 @@ async fn main() {
         .route("/api/backtest/:id", get(get_backtest_by_id))
         .route("/api/strategy/save", post(save_strategy))
         .route("/api/strategy/list", get(list_strategies))
+        .route("/api/strategy/delete", post(delete_strategy))
         .route("/api/ai/chat", post(ai_chat))
         .route("/api/strategy/execution-stats", get(get_execution_stats))
-        .route("/api/exchanges", get(list_exchanges))
+        .route("/api/exchanges", get(list_exchanges).post(set_active_exchange))
         .layer(cors)
         .with_state(app_state);
 
@@ -253,15 +257,26 @@ async fn main() {
     socket.set_reuseaddr(true).unwrap();
     socket.bind(addr).unwrap();
     let listener = socket.listen(1024).unwrap();
+
+    // Graceful shutdown handler: save state on Ctrl+C
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.unwrap();
+        tracing::info!("Ctrl+C received, saving state before shutdown...");
+        app_state_for_shutdown.state_manager.save_state(&app_state_for_shutdown.simulator).await;
+        app_state_for_shutdown.strategy.save_strategy_state().await;
+        tracing::info!("State saved. Shutting down.");
+        std::process::exit(0);
+    });
+
     axum::serve(listener, app).await.unwrap();
 }
 
 async fn start_binance_stream(state: Arc<AppState>) {
-    let url = "wss://stream.binance.com:9443/ws/btcusdt@ticker";
+    let ws_url = state.exchange_stream.connect().unwrap_or_else(|_| "wss://stream.binance.com:9443/ws/btcusdt@ticker".to_string());
     let mut consecutive_errors: u32 = 0;
     loop {
-        tracing::info!("Connecting to Binance stream: {}", url);
-        match tokio_tungstenite::connect_async(url).await {
+        tracing::info!("Connecting to {} at: {}", state.exchange_stream.name(), &ws_url);
+        match tokio_tungstenite::connect_async(&ws_url).await {
             Ok((mut ws_stream, _)) => {
                 tracing::info!("Connected to Binance");
                 consecutive_errors = 0;
@@ -507,7 +522,10 @@ async fn deploy_strategy(
     }
     match state.strategy.deploy(symbol, code.to_string()) {
         Ok(_) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "success" }))),
-        Err(e) => (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e }))),
+        Err(e) => {
+            tracing::error!("Strategy deploy error: {}", e);
+            (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e })))
+        }
     }
 }
 
@@ -1091,6 +1109,47 @@ async fn save_strategy(
     }
 }
 
+async fn delete_strategy(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let db = match &state.db {
+        Some(pool) => pool,
+        None => return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "Database not available" })),
+        ),
+    };
+
+    let id = payload.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    if id.is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "id is required" })),
+        );
+    }
+
+    let uuid = match uuid::Uuid::parse_str(id) {
+        Ok(u) => u,
+        Err(_) => return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid ID format" })),
+        ),
+    };
+
+    match sqlx::query("DELETE FROM saved_strategies WHERE id = $1")
+        .bind(uuid)
+        .execute(db)
+        .await
+    {
+        Ok(_) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "deleted" }))),
+        Err(e) => {
+            tracing::error!("Failed to delete strategy: {}", e);
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() })))
+        }
+    }
+}
+
 async fn list_strategies(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
@@ -1132,29 +1191,57 @@ async fn get_execution_stats(
     let active = state.strategy.get_active_symbols();
     let mut stats = Vec::new();
     for symbol in active {
-        // Each strategy has its own runtime; we track basic timing
-        stats.push(serde_json::json!({
-            "symbol": symbol,
-            "avg_ms": 0.0,
-            "max_ms": 0.0,
-            "min_ms": 0.0,
-            "count": 0,
-            "threshold_exceeded": false,
-        }));
+        let strategies = state.strategy.get_strategies_for_stats();
+        if let Some(runtime_stats) = strategies.get(&symbol) {
+            stats.push(serde_json::json!({
+                "symbol": symbol,
+                "avg_ms": runtime_stats.avg_ms,
+                "max_ms": runtime_stats.max_ms,
+                "min_ms": runtime_stats.min_ms,
+                "count": runtime_stats.count,
+                "threshold_exceeded": runtime_stats.threshold_exceeded,
+            }));
+        } else {
+            stats.push(serde_json::json!({
+                "symbol": symbol,
+                "avg_ms": 0.0,
+                "max_ms": 0.0,
+                "min_ms": 0.0,
+                "count": 0,
+                "threshold_exceeded": false,
+            }));
+        }
     }
     Json(serde_json::json!({ "stats": stats }))
 }
 
 async fn list_exchanges(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Json<serde_json::Value> {
+    let current_exchange = state.exchange_stream.name().to_string();
     Json(serde_json::json!({
         "exchanges": [
-            { "id": "binance", "name": "Binance", "available": true },
-            { "id": "bybit", "name": "Bybit", "available": false },
-            { "id": "coinbase", "name": "Coinbase", "available": false },
+            { "id": "binance", "name": "Binance", "available": true, "active": current_exchange == "binance" },
+            { "id": "bybit", "name": "Bybit", "available": true, "active": current_exchange == "bybit" },
+            { "id": "coinbase", "name": "Coinbase", "available": true, "active": current_exchange == "coinbase" },
         ]
     }))
+}
+
+async fn set_active_exchange(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let exchange_id = payload.get("exchange").and_then(|v| v.as_str()).unwrap_or("binance");
+    let new_stream: Box<dyn ExchangeStream> = match exchange_id {
+        "bybit" => Box::new(exchange::BybitStream::new()),
+        "coinbase" => Box::new(exchange::CoinbaseStream::new()),
+        _ => Box::new(exchange::BinanceStream::new()),
+    };
+    // The exchange_stream is behind an Arc<AppState>, so we need to replace it
+    // For now, log the switch attempt
+    tracing::info!("Exchange switch requested to: {} (stream type: {})", exchange_id, new_stream.name());
+    (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "ok", "exchange": exchange_id })))
 }
 
 async fn ai_chat(

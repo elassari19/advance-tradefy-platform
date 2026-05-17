@@ -52,6 +52,7 @@ export type WebhookConfig = {
   template?: string;
   retry_count?: number;
   timeout_ms?: number;
+  exchange?: string;
 };
 
 export type AlertActionConfig = {
