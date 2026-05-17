@@ -83,7 +83,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ symbol, code, isActive, 
     setMessage('');
   }, [symbol]);
 
-  const handleEditorMount = useCallback((_editor: any, monaco: any) => {
+  const handleEditorMount = useCallback((editor: any, monaco: any) => {
     monaco.languages.registerCompletionItemProvider('python', {
       triggerCharacters: ['.', '('],
       provideCompletionItems: (model: any, position: any) => {
@@ -104,7 +104,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ symbol, code, isActive, 
         };
       },
     });
+
   }, []);
+
 
   const handleDeploy = async () => {
     setStatus('loading');
@@ -222,6 +224,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ symbol, code, isActive, 
           value={code}
           onChange={(value) => onCodeChange(value || '')}
           onMount={handleEditorMount}
+          onValidate={(markers: any[]) => {
+            const errors = markers.filter((m: any) => m.severity === 8);
+          }}
           options={{
             minimap: { enabled: false },
             fontSize: 13,

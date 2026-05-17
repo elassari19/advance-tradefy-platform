@@ -1,12 +1,20 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import { createChart, ColorType, AreaSeries, LineSeries, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
-import type { IChartApi, ISeriesApi, IPriceLine } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, IPriceLine, ISeriesPrimitive } from 'lightweight-charts';
 import type { Candle } from '../hooks/useMarketData';
 import type { Position } from '../hooks/useSimulator';
 import type { IndicatorConfig } from '../utils/indicators';
 import { batchEvaluateIndicators } from '../utils/indicators';
+import type { BacktestTrade } from '../hooks/useBacktest';
 
 type ChartType = 'area' | 'line' | 'candle';
+
+interface BacktestTradeMarker {
+  time: number;
+  type: 'buy' | 'sell' | 'tp' | 'sl';
+  price: number;
+  label: string;
+}
 
 interface ChartProps {
   candles: Candle[];
@@ -14,11 +22,13 @@ interface ChartProps {
   onUpdatePosition: (id: string, tp: number | null, sl: number | null) => void;
   chartType: ChartType;
   indicatorConfigs: IndicatorConfig[];
+  backtestTrades?: BacktestTrade[];
+  showBacktestOverlay?: boolean;
 }
 
 const SUB_CHART_HEIGHT = 130;
 
-export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePosition, chartType, indicatorConfigs }) => {
+export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePosition, chartType, indicatorConfigs, backtestTrades, showBacktestOverlay }) => {
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const mainChartRef = useRef<IChartApi | null>(null);
   const areaSeriesRef = useRef<ISeriesApi<'Area'> | null>(null);
@@ -31,6 +41,7 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
   const indicatorSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
   const prevMainLineIdsRef = useRef<string[]>([]);
   const isSyncingRef = useRef(false);
+  const tradeMarkerPriceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
 
   const subContainerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const subChartRefs = useRef<Map<string, IChartApi>>(new Map());
@@ -410,6 +421,83 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
 
     return () => { cancelled = true; };
   }, [indicatorConfigs, candles]);
+
+  // ─── Backtest Trade Markers ──────────────────────
+  useEffect(() => {
+    const series = activeSeriesRef.current;
+    if (!series || !showBacktestOverlay || !backtestTrades?.length) {
+      for (const [, line] of tradeMarkerPriceLinesRef.current) { try { series?.removePriceLine(line); } catch {} }
+      tradeMarkerPriceLinesRef.current.clear();
+      return;
+    }
+
+    for (const [, line] of tradeMarkerPriceLinesRef.current) { try { series?.removePriceLine(line); } catch {} }
+    tradeMarkerPriceLinesRef.current.clear();
+
+    for (const trade of backtestTrades) {
+      const buyKey = `bt-buy-${trade.id}`;
+      const sellKey = `bt-sell-${trade.id}`;
+      const tpKey = `bt-tp-${trade.id}`;
+      const slKey = `bt-sl-${trade.id}`;
+
+      if (trade.side === 'Buy') {
+        try {
+          const line = series.createPriceLine({
+            price: trade.entry_price,
+            color: '#22c55e',
+            lineStyle: 3,
+            lineWidth: 1,
+            axisLabelVisible: true,
+            title: `B ${trade.quantity}`,
+          });
+          tradeMarkerPriceLinesRef.current.set(buyKey, line);
+        } catch {}
+      } else {
+        try {
+          const line = series.createPriceLine({
+            price: trade.entry_price,
+            color: '#ef4444',
+            lineStyle: 3,
+            lineWidth: 1,
+            axisLabelVisible: true,
+            title: `S ${trade.quantity}`,
+          });
+          tradeMarkerPriceLinesRef.current.set(sellKey, line);
+        } catch {}
+      }
+
+      if (trade.exit_reason === 'Take Profit') {
+        try {
+          const line = series.createPriceLine({
+            price: trade.exit_price,
+            color: '#22c55e',
+            lineStyle: 1,
+            lineWidth: 1,
+            axisLabelVisible: true,
+            title: 'TP',
+          });
+          tradeMarkerPriceLinesRef.current.set(tpKey, line);
+        } catch {}
+      } else if (trade.exit_reason === 'Stop Loss') {
+        try {
+          const line = series.createPriceLine({
+            price: trade.exit_price,
+            color: '#ef4444',
+            lineStyle: 1,
+            lineWidth: 1,
+            axisLabelVisible: true,
+            title: 'SL',
+          });
+          tradeMarkerPriceLinesRef.current.set(slKey, line);
+        } catch {}
+      }
+    }
+
+    return () => {
+      for (const [, line] of tradeMarkerPriceLinesRef.current) { try { series.removePriceLine(line); } catch {} }
+      tradeMarkerPriceLinesRef.current.clear();
+    };
+  }, [backtestTrades, showBacktestOverlay, chartType]);
 
   return (
     <div className="w-full h-full relative cursor-crosshair flex flex-col">

@@ -43,14 +43,29 @@ impl Indicator for Bollinger {
         let mut upper = vec![None; len];
         let mut lower = vec![None; len];
 
+        if !crate::indicators::ensure_minimum(candles, self.period) {
+            return IndicatorOutput {
+                plots: vec![
+                    Plot::Band {
+                        id: "bb".into(), label_upper: format!("Upper ({})", self.period), label_lower: format!("Lower ({})", self.period),
+                        color: self.color.clone(), upper, lower, fill_color: format!("{}33", &self.color),
+                    },
+                    Plot::Line {
+                        id: format!("bb_middle_{}", self.period), label: format!("BB Middle ({})", self.period),
+                        color: self.color.clone(), values: middle,
+                    },
+                ],
+            };
+        }
+
         for i in (self.period - 1)..len {
             let slice = &closes[i + 1 - self.period..=i];
-            let mean: f64 = slice.iter().sum::<f64>() / self.period as f64;
-            let variance: f64 = slice.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / self.period as f64;
+            let mean = crate::indicators::guarded(crate::indicators::safe_div(slice.iter().sum::<f64>(), self.period as f64));
+            let variance = crate::indicators::guarded(crate::indicators::safe_div(slice.iter().map(|v| (v - mean).powi(2)).sum::<f64>(), self.period as f64));
             let std = variance.sqrt();
             middle[i] = Some(mean);
-            upper[i] = Some(mean + self.stddev * std);
-            lower[i] = Some(mean - self.stddev * std);
+            upper[i] = Some(crate::indicators::guarded(mean + self.stddev * std));
+            lower[i] = Some(crate::indicators::guarded(mean - self.stddev * std));
         }
 
         IndicatorOutput {

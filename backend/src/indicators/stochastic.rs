@@ -43,17 +43,27 @@ impl Indicator for Stochastic {
         let len = candles.len();
         let mut raw_k = vec![None; len];
 
-        if len >= self.k_period {
-            for i in (self.k_period - 1)..len {
-                let slice = &candles[i + 1 - self.k_period..=i];
-                let highest: f64 = slice.iter().map(|c| c.high).fold(f64::NEG_INFINITY, f64::max);
-                let lowest: f64 = slice.iter().map(|c| c.low).fold(f64::INFINITY, f64::min);
-                let range = highest - lowest;
-                if range != 0.0 {
-                    raw_k[i] = Some((candles[i].close - lowest) / range * 100.0);
-                } else {
-                    raw_k[i] = Some(50.0);
-                }
+        if !crate::indicators::ensure_minimum(candles, self.k_period) {
+            let empty = vec![None; len];
+            return IndicatorOutput {
+                plots: vec![
+                    Plot::Line { id: "stoch_k".into(), label: format!("%K ({})", self.k_period), color: self.color.clone(), values: empty.clone() },
+                    Plot::Line { id: "stoch_d".into(), label: format!("%D ({})", self.d_period), color: "#f59e0b".into(), values: empty },
+                    Plot::Hline { price: 80.0, color: "#ef4444".into(), style: "dashed".into() },
+                    Plot::Hline { price: 20.0, color: "#22c55e".into(), style: "dashed".into() },
+                ],
+            };
+        }
+
+        for i in (self.k_period - 1)..len {
+            let slice = &candles[i + 1 - self.k_period..=i];
+            let highest: f64 = slice.iter().map(|c| c.high).fold(f64::NEG_INFINITY, f64::max);
+            let lowest: f64 = slice.iter().map(|c| c.low).fold(f64::INFINITY, f64::min);
+            let range = highest - lowest;
+            if range != 0.0 {
+                raw_k[i] = Some(crate::indicators::guarded(crate::indicators::safe_div(candles[i].close - lowest, range) * 100.0));
+            } else {
+                raw_k[i] = Some(50.0);
             }
         }
 
@@ -65,7 +75,7 @@ impl Indicator for Stochastic {
                 let sum: f64 = raw_k[i + 1 - count..=i].iter().filter_map(|v| *v).sum();
                 let valid = raw_k[i + 1 - count..=i].iter().filter(|v| v.is_some()).count();
                 if valid == count {
-                    smoothed[i] = Some(sum / count as f64);
+                    smoothed[i] = Some(crate::indicators::guarded(crate::indicators::safe_div(sum, count as f64)));
                 }
             }
             smoothed
@@ -79,7 +89,7 @@ impl Indicator for Stochastic {
                 let sum: f64 = values_k[i + 1 - self.d_period..=i].iter().filter_map(|v| *v).sum();
                 let valid = values_k[i + 1 - self.d_period..=i].iter().filter(|v| v.is_some()).count();
                 if valid == self.d_period {
-                    d[i] = Some(sum / self.d_period as f64);
+                    d[i] = Some(crate::indicators::guarded(crate::indicators::safe_div(sum, self.d_period as f64)));
                 }
             }
             d

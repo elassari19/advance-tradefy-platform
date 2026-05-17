@@ -181,3 +181,87 @@ pub fn list_available_indicators() -> Vec<serde_json::Value> {
         vwap::VWAP::describe(),
     ]
 }
+
+pub fn safe_div(numerator: f64, denominator: f64) -> f64 {
+    if denominator == 0.0 || !denominator.is_finite() {
+        0.0
+    } else {
+        let result = numerator / denominator;
+        if result.is_finite() { result } else { 0.0 }
+    }
+}
+
+pub fn guarded(value: f64) -> f64 {
+    if value.is_finite() { value } else { 0.0 }
+}
+
+pub fn ensure_minimum(candles: &[Candle], minimum: usize) -> bool {
+    candles.len() >= minimum
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn candle(close: f64) -> Candle {
+        Candle { time: 0, open: close, high: close + 1.0, low: close - 1.0, close, volume: 1000.0, symbol: "BTCUSDT".into(), is_closed: true }
+    }
+
+    #[test]
+    fn test_safe_div_normal() { assert_eq!(safe_div(10.0, 2.0), 5.0); }
+    #[test]
+    fn test_safe_div_by_zero() { assert_eq!(safe_div(10.0, 0.0), 0.0); }
+    #[test]
+    fn test_safe_div_nan() { assert_eq!(safe_div(10.0, f64::NAN), 0.0); }
+    #[test]
+    fn test_safe_div_inf() { assert_eq!(safe_div(f64::INFINITY, 2.0), 0.0); }
+
+    #[test]
+    fn test_guarded_normal() { assert_eq!(guarded(42.0), 42.0); }
+    #[test]
+    fn test_guarded_nan() { assert_eq!(guarded(f64::NAN), 0.0); }
+    #[test]
+    fn test_guarded_inf() { assert_eq!(guarded(f64::INFINITY), 0.0); }
+    #[test]
+    fn test_guarded_neg_inf() { assert_eq!(guarded(f64::NEG_INFINITY), 0.0); }
+
+    #[test]
+    fn test_ensure_minimum_ok() {
+        let candles = vec![candle(1.0), candle(2.0), candle(3.0), candle(4.0), candle(5.0)];
+        assert!(ensure_minimum(&candles, 5));
+        assert!(ensure_minimum(&candles, 3));
+    }
+
+    #[test]
+    fn test_ensure_minimum_fail() {
+        let candles = vec![candle(1.0), candle(2.0)];
+        assert!(!ensure_minimum(&candles, 5));
+    }
+
+    #[test]
+    fn test_pipeline_empty() {
+        let pipe = IndicatorPipeline::new();
+        let result = pipe.evaluate_all(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_resolve_mtf_basic() {
+        use crate::candle_aggregator::CandleAggregator;
+        let mut agg = CandleAggregator::new("BTCUSDT", 5);
+        agg.process_tick(&crate::models::Tick { symbol: "BTCUSDT".into(), price: 50000.0, time: 0 });
+        let mut map = HashMap::new();
+        map.insert(("BTCUSDT".into(), 5u32), agg);
+        assert_eq!(resolve_mtf("BTCUSDT", "5m", "close", &map), Some(50000.0));
+        assert_eq!(resolve_mtf("BTCUSDT", "5m", "hl2", &map), Some(50000.0));
+        assert_eq!(resolve_mtf("BTCUSDT", "5m", "nonexistent", &map), None);
+    }
+
+    #[test]
+    fn test_auto_detect_pane() {
+        assert_eq!(super::auto_detect_pane("RSI"), Pane::Sub);
+        assert_eq!(super::auto_detect_pane("MACD"), Pane::Sub);
+        assert_eq!(super::auto_detect_pane("Stochastic"), Pane::Sub);
+        assert_eq!(super::auto_detect_pane("SMA"), Pane::Overlay);
+    }
+}

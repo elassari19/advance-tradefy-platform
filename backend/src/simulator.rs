@@ -230,3 +230,112 @@ impl SimulatorEngine {
         self.state.lock().unwrap().clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_initial_state() {
+        let engine = SimulatorEngine::new(10000.0);
+        let state = engine.get_state();
+        assert_eq!(state.balance, 10000.0);
+        assert!(state.open_positions.is_empty());
+        assert!(state.history.is_empty());
+    }
+
+    #[test]
+    fn test_place_buy_order() {
+        let engine = SimulatorEngine::new(10000.0);
+        let order = OrderRequest {
+            symbol: "BTCUSDT".into(), side: TradeSide::Buy, quantity: 1.0,
+            take_profit: None, stop_loss: None,
+        };
+        let result = engine.place_order(order, 100.0, 0);
+        assert!(result.is_ok());
+        let state = engine.get_state();
+        assert_eq!(state.open_positions.len(), 1);
+        assert_eq!(state.open_positions[0].entry_price, 100.0);
+    }
+
+    #[test]
+    fn test_tp_sl_within_candle() {
+        let engine = SimulatorEngine::new(10000.0);
+        let order = OrderRequest {
+            symbol: "BTCUSDT".into(), side: TradeSide::Buy, quantity: 1.0,
+            take_profit: Some(110.0), stop_loss: Some(90.0),
+        };
+        engine.place_order(order, 100.0, 0).unwrap();
+        let candle = Candle {
+            time: 60, open: 105.0, high: 112.0, low: 103.0, close: 108.0,
+            volume: 1000.0, symbol: "BTCUSDT".into(), is_closed: true,
+        };
+        engine.process_candle(&candle);
+        let state = engine.get_state();
+        assert_eq!(state.open_positions.len(), 0);
+        assert!(state.balance > 10000.0);
+    }
+
+    #[test]
+    fn test_sl_hit_before_tp() {
+        let engine = SimulatorEngine::new(10000.0);
+        let order = OrderRequest {
+            symbol: "BTCUSDT".into(), side: TradeSide::Buy, quantity: 1.0,
+            take_profit: Some(110.0), stop_loss: Some(95.0),
+        };
+        engine.place_order(order, 100.0, 0).unwrap();
+        let candle = Candle {
+            time: 60, open: 99.0, high: 107.0, low: 94.0, close: 106.0,
+            volume: 1000.0, symbol: "BTCUSDT".into(), is_closed: true,
+        };
+        engine.process_candle(&candle);
+        let state = engine.get_state();
+        assert_eq!(state.open_positions.len(), 0);
+        assert!(state.balance < 10000.0);
+    }
+
+    #[test]
+    fn test_close_position() {
+        let engine = SimulatorEngine::new(10000.0);
+        let order = OrderRequest {
+            symbol: "BTCUSDT".into(), side: TradeSide::Buy, quantity: 1.0,
+            take_profit: None, stop_loss: None,
+        };
+        let id = engine.place_order(order, 100.0, 0).unwrap();
+        let state = engine.get_state();
+        assert_eq!(state.open_positions.len(), 1);
+        engine.close_position(&id, 100).unwrap();
+        let state = engine.get_state();
+        assert_eq!(state.open_positions.len(), 0);
+        assert_eq!(state.history.len(), 1);
+        assert_eq!(state.history[0].exit_reason, "Manual Close");
+    }
+
+    #[test]
+    fn test_update_position_tp_sl() {
+        let engine = SimulatorEngine::new(10000.0);
+        let order = OrderRequest {
+            symbol: "BTCUSDT".into(), side: TradeSide::Buy, quantity: 1.0,
+            take_profit: None, stop_loss: None,
+        };
+        let id = engine.place_order(order, 100.0, 0).unwrap();
+        engine.update_position(&id, Some(110.0), Some(95.0)).unwrap();
+        let state = engine.get_state();
+        assert_eq!(state.open_positions[0].take_profit, Some(110.0));
+        assert_eq!(state.open_positions[0].stop_loss, Some(95.0));
+    }
+
+    #[test]
+    fn test_process_tick_updates_price() {
+        let engine = SimulatorEngine::new(10000.0);
+        let order = OrderRequest {
+            symbol: "BTCUSDT".into(), side: TradeSide::Buy, quantity: 1.0,
+            take_profit: None, stop_loss: None,
+        };
+        engine.place_order(order, 100.0, 0).unwrap();
+        engine.process_tick(&Tick { symbol: "BTCUSDT".into(), price: 105.0, time: 10 });
+        let state = engine.get_state();
+        assert_eq!(state.open_positions[0].current_price, 105.0);
+        assert!(state.open_positions[0].pnl > 0.0);
+    }
+}

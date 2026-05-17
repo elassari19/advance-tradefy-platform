@@ -78,8 +78,20 @@ impl BacktestEngine {
         Ok(all_candles)
     }
 
+    pub async fn run_with_candles(&self, candles: Vec<Candle>) -> Result<BacktestResult, String> {
+        self.execute_with_candles(candles)
+    }
+
     pub async fn run(&self) -> Result<BacktestResult, String> {
         let candles = self.fetch_historical_candles().await?;
+        self.execute_with_candles(candles)
+    }
+
+    fn execute_with_candles(&self, candles: Vec<Candle>) -> Result<BacktestResult, String> {
+        if candles.is_empty() {
+            return Err("No candles provided for backtest execution".to_string());
+        }
+
         let engine = SimulatorEngine::new(self.request.initial_balance);
         let runtime = PythonRuntime::new();
 
@@ -373,6 +385,98 @@ pub async fn run_optimization(request: &OptimizeRequest) -> Result<Vec<Optimizat
     });
 
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_candles() -> Vec<Candle> {
+        (0..50).map(|i| {
+            let base = 100.0 + i as f64;
+            Candle {
+                time: i as u64 * 60, open: base, high: base + 1.0, low: base - 1.0, close: base,
+                volume: 1000.0, symbol: "BTCUSDT".into(), is_closed: true,
+            }
+        }).collect()
+    }
+
+    fn never_trade() -> String {
+        "def on_tick(price, open, high, low, close, volume): pass".into()
+    }
+
+    #[test]
+    fn test_empty_candles_returns_error() {
+        let req = BacktestRequest {
+            strategy_code: never_trade(), symbol: "BTCUSDT".into(), timeframe: "1m".into(),
+            start_time: 0, end_time: 0, initial_balance: 10000.0, commission: 0.001, slippage: 0.0001,
+        };
+        let engine = BacktestEngine::new(req);
+        let result = engine.execute_with_candles(vec![]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_never_trade_strategy() {
+        let candles = make_test_candles();
+        let req = BacktestRequest {
+            strategy_code: never_trade(), symbol: "BTCUSDT".into(), timeframe: "1m".into(),
+            start_time: 0, end_time: 2999, initial_balance: 10000.0, commission: 0.001, slippage: 0.0001,
+        };
+        let engine = BacktestEngine::new(req);
+        let result = engine.execute_with_candles(candles);
+        assert!(result.is_ok());
+        let bt = result.unwrap();
+        assert_eq!(bt.summary.total_trades, 0);
+        assert_eq!(bt.summary.initial_balance, bt.summary.final_balance);
+    }
+
+    #[test]
+    fn test_sharpe_ratio_zero_for_single_value() {
+        assert_eq!(compute_sharpe_ratio(&[100.0], 100.0), 0.0);
+        assert_eq!(compute_sharpe_ratio(&[], 100.0), 0.0);
+    }
+
+    #[test]
+    fn test_sharpe_ratio_positive() {
+        let eq = vec![100.0, 101.0, 102.0, 103.0, 104.0, 105.0];
+        let sr = compute_sharpe_ratio(&eq, 100.0);
+        assert!(sr > 0.0);
+    }
+
+    #[test]
+    fn test_cartesian_product_single_param() {
+        let result = cartesian_product(&[("period".into(), vec![5.0, 10.0, 20.0])]);
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_cartesian_product_two_params() {
+        let result = cartesian_product(&[
+            ("fast".into(), vec![5.0, 10.0]),
+            ("slow".into(), vec![20.0, 30.0]),
+        ]);
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn test_cartesian_product_empty() {
+        let result = cartesian_product(&[]);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].is_empty());
+    }
+
+    #[test]
+    fn test_equity_curve_length() {
+        let candles = make_test_candles();
+        let req = BacktestRequest {
+            strategy_code: never_trade(), symbol: "BTCUSDT".into(), timeframe: "1m".into(),
+            start_time: 0, end_time: 2999, initial_balance: 10000.0, commission: 0.001, slippage: 0.0001,
+        };
+        let engine = BacktestEngine::new(req);
+        let result = engine.execute_with_candles(candles).unwrap();
+        assert_eq!(result.equity_curve.len(), 50);
+    }
 }
 
 fn cartesian_product(param_values: &[(String, Vec<f64>)]) -> Vec<Vec<(String, f64)>> {

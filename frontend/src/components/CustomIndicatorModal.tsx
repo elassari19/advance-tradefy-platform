@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Play, AlertCircle, CheckCircle } from 'lucide-react';
+import { X, Save, Play, AlertCircle, CheckCircle, Trash2 } from 'lucide-react';
 import type { CustomIndicatorDef } from '../utils/indicators';
 
 const API_URL = 'http://localhost:3000';
@@ -8,6 +8,7 @@ interface CustomIndicatorModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (def: CustomIndicatorDef) => void;
+  onDelete?: (id: string) => void;
   editDef?: CustomIndicatorDef | null;
 }
 
@@ -157,22 +158,35 @@ export const CustomIndicatorModal: React.FC<CustomIndicatorModalProps> = ({ isOp
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-zinc-800">
-          <button
-            onClick={handleTest}
-            disabled={testing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
-          >
-            <Play size={12} />
-            {testing ? 'Running...' : 'Test'}
-          </button>
-          <button
-            onClick={handleSave}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition-colors"
-          >
-            <Save size={12} />
-            {editDef ? 'Update' : 'Save'} Indicator
-          </button>
+        <div className="flex items-center justify-between px-5 py-4 border-t border-zinc-800">
+          <div>
+            {editDef && onDelete && (
+              <button
+                onClick={() => { onDelete(editDef.id); onClose(); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors"
+              >
+                <Trash2 size={12} />
+                Delete
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleTest}
+              disabled={testing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+            >
+              <Play size={12} />
+              {testing ? 'Running...' : 'Test'}
+            </button>
+            <button
+              onClick={handleSave}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition-colors"
+            >
+              <Save size={12} />
+              {editDef ? 'Update' : 'Save'} Indicator
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -37,9 +37,9 @@ impl Indicator for EMA {
     fn calculate(&self, candles: &[Candle]) -> IndicatorOutput {
         let closes: Vec<f64> = candles.iter().map(|c| c.close).collect();
         let mut values = vec![None; closes.len()];
-        let multiplier = 2.0 / (self.period as f64 + 1.0);
+        let multiplier = crate::indicators::safe_div(2.0, self.period as f64 + 1.0);
 
-        if closes.is_empty() || closes.len() < self.period {
+        if !crate::indicators::ensure_minimum(candles, self.period) {
             return IndicatorOutput { plots: vec![Plot::Line {
                 id: format!("ema_{}", self.period), label: format!("EMA({})", self.period),
                 color: self.color.clone(), values,
@@ -47,12 +47,12 @@ impl Indicator for EMA {
         }
 
         let first_sum: f64 = closes[..self.period].iter().sum();
-        let mut ema = first_sum / self.period as f64;
+        let mut ema = crate::indicators::guarded(crate::indicators::safe_div(first_sum, self.period as f64));
         values[self.period - 1] = Some(ema);
 
         for i in self.period..closes.len() {
             ema = (closes[i] - ema) * multiplier + ema;
-            values[i] = Some(ema);
+            values[i] = Some(crate::indicators::guarded(ema));
         }
 
         IndicatorOutput {

@@ -39,7 +39,7 @@ impl Indicator for RSI {
         let len = closes.len();
         let mut values = vec![None; len];
 
-        if len < self.period + 1 {
+        if !crate::indicators::ensure_minimum(candles, self.period + 1) {
             return IndicatorOutput {
                 plots: vec![Plot::Line {
                     id: format!("rsi_{}", self.period), label: format!("RSI({})", self.period),
@@ -56,24 +56,24 @@ impl Indicator for RSI {
             losses.push(if diff < 0.0 { -diff } else { 0.0 });
         }
 
-        let mut avg_gain: f64 = gains[..self.period].iter().sum::<f64>() / self.period as f64;
-        let mut avg_loss: f64 = losses[..self.period].iter().sum::<f64>() / self.period as f64;
+        let mut avg_gain: f64 = crate::indicators::safe_div(gains[..self.period].iter().sum::<f64>(), self.period as f64);
+        let mut avg_loss: f64 = crate::indicators::safe_div(losses[..self.period].iter().sum::<f64>(), self.period as f64);
 
         if avg_loss == 0.0 {
             values[self.period] = Some(100.0);
         } else {
-            let rs = avg_gain / avg_loss;
-            values[self.period] = Some(100.0 - 100.0 / (1.0 + rs));
+            let rs = crate::indicators::safe_div(avg_gain, avg_loss);
+            values[self.period] = Some(crate::indicators::guarded(100.0 - crate::indicators::safe_div(100.0, 1.0 + rs)));
         }
 
         for i in (self.period + 1)..len {
-            avg_gain = (avg_gain * (self.period as f64 - 1.0) + gains[i - 1]) / self.period as f64;
-            avg_loss = (avg_loss * (self.period as f64 - 1.0) + losses[i - 1]) / self.period as f64;
+            avg_gain = crate::indicators::safe_div(avg_gain * (self.period as f64 - 1.0) + gains[i - 1], self.period as f64);
+            avg_loss = crate::indicators::safe_div(avg_loss * (self.period as f64 - 1.0) + losses[i - 1], self.period as f64);
             if avg_loss == 0.0 {
                 values[i] = Some(100.0);
             } else {
-                let rs = avg_gain / avg_loss;
-                values[i] = Some(100.0 - 100.0 / (1.0 + rs));
+                let rs = crate::indicators::safe_div(avg_gain, avg_loss);
+                values[i] = Some(crate::indicators::guarded(100.0 - crate::indicators::safe_div(100.0, 1.0 + rs)));
             }
         }
 

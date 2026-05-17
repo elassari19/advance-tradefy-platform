@@ -1,5 +1,7 @@
 use pyo3::{prelude::*, types::PyDict, types::PyList};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use serde::Serialize;
 use crate::models::Candle;
 use crate::time_series::TimeSeries;
 use crate::indicator::TA_LIBRARY;
@@ -129,6 +131,15 @@ pub struct PlotOutput {
     pub hlines: Vec<crate::indicator::HlineEntry>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ExecutionStats {
+    pub avg_ms: f64,
+    pub max_ms: f64,
+    pub min_ms: f64,
+    pub count: usize,
+    pub threshold_exceeded: bool,
+}
+
 #[derive(Clone)]
 pub struct PythonRuntime {
     pending_signal: Arc<Mutex<Option<PythonSignal>>>,
@@ -138,6 +149,7 @@ pub struct PythonRuntime {
     position_size: Arc<Mutex<f64>>,
     position_avg_price: Arc<Mutex<f64>>,
     equity: Arc<Mutex<f64>>,
+    execution_times: Arc<Mutex<Vec<f64>>>,
 }
 
 impl PythonRuntime {
@@ -150,6 +162,7 @@ impl PythonRuntime {
             position_size: Arc::new(Mutex::new(0.0)),
             position_avg_price: Arc::new(Mutex::new(0.0)),
             equity: Arc::new(Mutex::new(0.0)),
+            execution_times: Arc::new(Mutex::new(Vec::with_capacity(100))),
         }
     }
 
@@ -166,6 +179,18 @@ impl PythonRuntime {
         *self.position_size.lock().unwrap() = size;
         *self.position_avg_price.lock().unwrap() = avg_price;
         *self.equity.lock().unwrap() = equity_val;
+    }
+
+    pub fn get_execution_stats(&self) -> ExecutionStats {
+        let times = self.execution_times.lock().unwrap();
+        let len = times.len();
+        if len == 0 {
+            return ExecutionStats { avg_ms: 0.0, max_ms: 0.0, min_ms: 0.0, count: 0, threshold_exceeded: false };
+        }
+        let avg = times.iter().sum::<f64>() / len as f64;
+        let max = times.iter().fold(0.0f64, |a, b| a.max(*b));
+        let min = times.iter().fold(f64::MAX, |a, b| a.min(*b));
+        ExecutionStats { avg_ms: avg, max_ms: max, min_ms: min, count: len, threshold_exceeded: max > 100.0 }
     }
 
     fn extract_signal(&self, globals: &PyDict) -> Result<(), String> {
@@ -314,11 +339,21 @@ if tradefy_signal:
 
             globals.set_item("_ta_symbol", "UNKNOWN").map_err(|e| e.to_string())?;
 
+            let start = Instant::now();
             py.run(&code_with_globals, Some(&globals), None)
                 .map_err(|e| format!("Python error: {}", e))?;
+            let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
             self.extract_signal(&globals)?;
             self.extract_plots(&globals, py);
+
+            {
+                let mut times = self.execution_times.lock().unwrap();
+                times.push(elapsed_ms);
+                if times.len() > 1000 {
+                    times.remove(0);
+                }
+            }
 
             Ok(())
         })
@@ -424,11 +459,21 @@ if tradefy_signal:
                 code = code
             );
 
+            let start = Instant::now();
             py.run(&code_with_globals, Some(&globals), None)
                 .map_err(|e| format!("Python error: {}", e))?;
+            let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
             self.extract_signal(&globals)?;
             self.extract_plots(&globals, py);
+
+            {
+                let mut times = self.execution_times.lock().unwrap();
+                times.push(elapsed_ms);
+                if times.len() > 1000 {
+                    times.remove(0);
+                }
+            }
 
             Ok(())
         })

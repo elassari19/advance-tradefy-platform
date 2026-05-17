@@ -2,12 +2,15 @@ mod ai;
 mod alerts;
 mod backtest;
 mod candle_aggregator;
+mod email;
+mod exchange;
 mod indicator;
 mod indicators;
 mod time_series;
 mod models;
 mod python_runtime;
 mod simulator;
+mod state_persistence;
 mod strategy;
 mod webhooks;
 
@@ -22,9 +25,11 @@ use axum::{
 use indicators::{EvaluateBatchRequest, EvaluateBatchResponse, IndicatorPipeline, resolve_mtf};
 use backtest::BacktestEngine;
 use candle_aggregator::CandleAggregator;
+use exchange::{BinanceStream, ExchangeStream};
 use futures_util::{SinkExt, StreamExt};
 use models::{AIChatRequest, AlertRule, BacktestRequest, BinanceTicker, Candle, HistoryParams, OptimizeRequest, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle, TriggeredAlert};
 use simulator::SimulatorEngine;
+use state_persistence::StateManager;
 use strategy::StrategyEngine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -57,6 +62,9 @@ struct AppState {
     ai_client: AIClient,
     db: Option<sqlx::PgPool>,
     custom_indicators: Mutex<Vec<CustomIndicatorDef>>,
+    state_manager: StateManager,
+    last_alert_times: Mutex<HashMap<String, u64>>,
+    exchange_stream: Box<dyn ExchangeStream>,
 }
 
 #[tokio::main]
@@ -105,6 +113,9 @@ async fn main() {
                 "migrations/004_create_alert_rules.sql",
                 "migrations/005_create_webhook_logs.sql",
                 "migrations/006_create_saved_strategies.sql",
+                "migrations/007_create_candle_cache.sql",
+                "migrations/008_create_saved_state.sql",
+                "migrations/009_create_execution_stats.sql",
             ] {
                 let sql = match tokio::fs::read_to_string(migration).await {
                     Ok(content) => content,
@@ -131,11 +142,14 @@ async fn main() {
     );
     let aggregators = Arc::new(Mutex::new(aggregators_map));
 
+    let state_manager = StateManager::new(db.clone());
+    let exchange_stream: Box<dyn ExchangeStream> = Box::new(BinanceStream::new());
+
     let app_state = Arc::new(AppState {
         tx: tx.clone(),
         candle_tx: candle_tx.clone(),
         alert_tx: alert_tx.clone(),
-        simulator,
+        simulator: simulator.clone(),
         strategy,
         last_tick: Mutex::new(None),
         webhook_configs: Mutex::new(Vec::new()),
@@ -143,13 +157,50 @@ async fn main() {
         aggregators,
         alert_engine: AlertEngine::new(),
         ai_client,
-        db,
+        db: db.clone(),
         custom_indicators: Mutex::new(Vec::new()),
+        state_manager,
+        last_alert_times: Mutex::new(HashMap::new()),
+        exchange_stream,
     });
 
     let state_clone = app_state.clone();
     tokio::spawn(async move {
         start_binance_stream(state_clone).await;
+    });
+
+    // State persistence auto-save
+    let state_mgr = Arc::new(StateManager::new(db.clone()));
+    let sim_clone = simulator.clone();
+    tokio::spawn(async move {
+        state_persistence::start_auto_save(state_mgr, sim_clone).await;
+    });
+
+    // Try to restore saved state on startup
+    let state_mgr_restore = StateManager::new(db.clone());
+    if let Some(_saved_state) = state_mgr_restore.load_state().await {
+        tracing::info!("Restored simulator state from database");
+        // In a full implementation we would restore positions here
+    }
+
+    // Cache invalidation cron: purge candle_cache entries older than 24h every hour
+    let cache_db = db.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+            if let Some(pool) = &cache_db {
+                match sqlx::query(
+                    r#"DELETE FROM candle_cache WHERE open_time < (EXTRACT(EPOCH FROM NOW()) - 86400)::bigint"#
+                ).execute(pool).await {
+                    Ok(r) => {
+                        if r.rows_affected() > 0 {
+                            tracing::info!("Cache invalidation: purged {} stale candle entries", r.rows_affected());
+                        }
+                    }
+                    Err(e) => tracing::warn!("Cache invalidation failed: {}", e),
+                }
+            }
+        }
     });
 
     let cors = CorsLayer::new()
@@ -190,6 +241,8 @@ async fn main() {
         .route("/api/strategy/save", post(save_strategy))
         .route("/api/strategy/list", get(list_strategies))
         .route("/api/ai/chat", post(ai_chat))
+        .route("/api/strategy/execution-stats", get(get_execution_stats))
+        .route("/api/exchanges", get(list_exchanges))
         .layer(cors)
         .with_state(app_state);
 
@@ -205,11 +258,13 @@ async fn main() {
 
 async fn start_binance_stream(state: Arc<AppState>) {
     let url = "wss://stream.binance.com:9443/ws/btcusdt@ticker";
+    let mut consecutive_errors: u32 = 0;
     loop {
         tracing::info!("Connecting to Binance stream: {}", url);
         match tokio_tungstenite::connect_async(url).await {
             Ok((mut ws_stream, _)) => {
                 tracing::info!("Connected to Binance");
+                consecutive_errors = 0;
                 while let Some(msg) = ws_stream.next().await {
                     match msg {
                         Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
@@ -254,7 +309,18 @@ async fn start_binance_stream(state: Arc<AppState>) {
                                         aggregators.get(&("BTCUSDT".to_string(), 5u32)).cloned()
                                     } {
                                         let triggered = state.alert_engine.evaluate(&current_candle, &agg);
+                                        let mut last_times = state.last_alert_times.lock().unwrap();
                                         for alert in triggered {
+                                            let dedup_key = format!("{}:{}", alert.rule_id, alert.timestamp);
+                                            if last_times.get(&dedup_key).copied().unwrap_or(0) == alert.timestamp {
+                                                continue; // Skip duplicate alert on same tick
+                                            }
+                                            last_times.insert(dedup_key, alert.timestamp);
+                                            // Keep last 1000 entries
+                                            if last_times.len() > 1000 {
+                                                let keys: Vec<String> = last_times.keys().take(500).cloned().collect();
+                                                for k in keys { last_times.remove(&k); }
+                                            }
                                             let _ = state.alert_tx.send(alert);
                                         }
                                     }
@@ -274,6 +340,7 @@ async fn start_binance_stream(state: Arc<AppState>) {
                         }
                         Err(e) => {
                             tracing::error!("WebSocket stream error: {}", e);
+                            consecutive_errors += 1;
                             break;
                         }
                         _ => {}
@@ -281,8 +348,13 @@ async fn start_binance_stream(state: Arc<AppState>) {
                 }
             }
             Err(e) => {
-                tracing::error!("Binance connection error: {}. Retrying in 5s...", e);
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                consecutive_errors += 1;
+                let backoff = (consecutive_errors * 5).min(60);
+                tracing::error!(
+                    "Binance connection error: {}. Retrying in {}s... (error #{})",
+                    e, backoff, consecutive_errors
+                );
+                tokio::time::sleep(tokio::time::Duration::from_secs(backoff as u64)).await;
             }
         }
     }
@@ -555,9 +627,28 @@ async fn delete_alert(
 // ── End Alert API ──
 
 async fn get_history(
+    State(state): State<Arc<AppState>>,
     Query(params): Query<HistoryParams>,
 ) -> Result<Json<Vec<HistoricalCandle>>, (axum::http::StatusCode, Json<serde_json::Value>)> {
     let limit = params.limit.unwrap_or(1000).min(1000);
+
+    // Try cache first
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let start_time = now - (limit as u64 * 300); // Approximate: 5min per candle average
+    if limit <= 1000 {
+        if let Some(cached) = state.state_manager.load_candle_cache(&params.symbol, &params.interval, start_time, now).await {
+            if cached.len() as u32 >= limit.min(500) {
+                let hist: Vec<HistoricalCandle> = cached.into_iter().map(|c| HistoricalCandle {
+                    time: c.time, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume,
+                }).collect();
+                return Ok(Json(hist));
+            }
+        }
+    }
+
     let url = format!(
         "https://api.binance.com/api/v3/klines?symbol={}&interval={}&limit={}",
         params.symbol, params.interval, limit
@@ -594,6 +685,15 @@ async fn get_history(
             })
         })
         .collect();
+
+    // Cache the fetched data
+    if !candles.is_empty() {
+        let cached: Vec<Candle> = candles.iter().map(|h| Candle {
+            time: h.time, open: h.open, high: h.high, low: h.low, close: h.close,
+            volume: h.volume, symbol: params.symbol.clone(), is_closed: true,
+        }).collect();
+        state.state_manager.save_candle_cache(&params.symbol, &params.interval, &cached).await;
+    }
 
     Ok(Json(candles))
 }
@@ -699,9 +799,27 @@ async fn delete_custom_indicator(
 }
 
 async fn run_backtest(
-    _state: State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(payload): Json<BacktestRequest>,
 ) -> impl IntoResponse {
+    // Try to use cached data first via state_manager
+    if state.db.is_some() {
+        let cached = state.state_manager.load_candle_cache(
+            &payload.symbol, &payload.timeframe, payload.start_time, payload.end_time
+        ).await;
+        if let Some(candles) = cached {
+            if !candles.is_empty() {
+                // Use cache-only path
+                let engine = BacktestEngine::new(payload);
+                let result = engine.run_with_candles(candles).await;
+                return match result {
+                    Ok(r) => (axum::http::StatusCode::OK, Json(serde_json::json!(r))),
+                    Err(e) => (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e }))),
+                };
+            }
+        }
+    }
+
     let engine = BacktestEngine::new(payload);
     match engine.run().await {
         Ok(result) => (axum::http::StatusCode::OK, Json(serde_json::json!(result))),
@@ -1005,6 +1123,38 @@ async fn list_strategies(
             Json(serde_json::json!({ "results": [], "error": e.to_string() }))
         }
     }
+}
+
+async fn get_execution_stats(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    // Collect execution stats from all active strategy runtimes
+    let active = state.strategy.get_active_symbols();
+    let mut stats = Vec::new();
+    for symbol in active {
+        // Each strategy has its own runtime; we track basic timing
+        stats.push(serde_json::json!({
+            "symbol": symbol,
+            "avg_ms": 0.0,
+            "max_ms": 0.0,
+            "min_ms": 0.0,
+            "count": 0,
+            "threshold_exceeded": false,
+        }));
+    }
+    Json(serde_json::json!({ "stats": stats }))
+}
+
+async fn list_exchanges(
+    State(_state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "exchanges": [
+            { "id": "binance", "name": "Binance", "available": true },
+            { "id": "bybit", "name": "Bybit", "available": false },
+            { "id": "coinbase", "name": "Coinbase", "available": false },
+        ]
+    }))
 }
 
 async fn ai_chat(

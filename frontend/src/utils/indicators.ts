@@ -263,6 +263,12 @@ export function loadCustomIndicators(): CustomIndicatorDef[] {
   }
 }
 
+export function deleteCustomIndicator(id: string) {
+  const list = loadCustomIndicators();
+  const filtered = list.filter(d => d.id !== id);
+  localStorage.setItem('customIndicators', JSON.stringify(filtered));
+}
+
 export function saveCustomIndicator(def: CustomIndicatorDef) {
   const list = loadCustomIndicators();
   const idx = list.findIndex(d => d.id === def.id);

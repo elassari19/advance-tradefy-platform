@@ -29,11 +29,11 @@ impl Indicator for VWAP {
         let mut cum_vol = 0.0;
 
         for (i, candle) in candles.iter().enumerate() {
-            let typical_price = (candle.high + candle.low + candle.close) / 3.0;
+            let typical_price = crate::indicators::guarded(crate::indicators::safe_div(candle.high + candle.low + candle.close, 3.0));
             cum_pv += typical_price * candle.volume;
             cum_vol += candle.volume;
             if cum_vol > 0.0 {
-                values[i] = Some(cum_pv / cum_vol);
+                values[i] = Some(crate::indicators::guarded(crate::indicators::safe_div(cum_pv, cum_vol)));
             }
         }
 

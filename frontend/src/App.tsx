@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Plus, ChevronDown, BarChart3, FlaskConical } from "lucide-react";
+import { X, Plus, ChevronDown, BarChart3, FlaskConical, AlertTriangle } from "lucide-react";
 import { useMarketDataForSymbol } from "./hooks/useMarketData";
 import { useSimulator } from "./hooks/useSimulator";
 import { useBacktest } from "./hooks/useBacktest";
@@ -65,6 +65,10 @@ export function App() {
   const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
   const [showStrategyBrowser, setShowStrategyBrowser] = useState(false);
   const [optimizeOpen, setOptimizeOpen] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [toasts, setToasts] = useState<Array<{id: string; message: string; type: 'error' | 'success' | 'info'}>>([]);
+  const [showBacktestOverlay, setShowBacktestOverlay] = useState(false);
+  const backtestTradesRef = useRef<BacktestTrade[]>([]);
 
   // ── Alert State ──
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
@@ -75,7 +79,33 @@ export function App() {
   const alertWsRef = useRef<WebSocket | null>(null);
 
   const { state: simState, placeOrder, updatePosition, closePosition, deployStrategy, removeStrategy, fetchActiveStrategies, saveWebhooks, fetchWebhooks, fetchAlerts, saveAlert, deleteAlert, fetchWebhookLogs } = useSimulator();
-  const { runBacktest, saveBacktest, running: backtestRunning } = useBacktest();
+  const { runBacktest, saveBacktest, running: backtestRunning, error: backtestError } = useBacktest();
+
+  const addToast = useCallback((message: string, type: 'error' | 'success' | 'info' = 'info') => {
+    const id = Math.random().toString(36).slice(2);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  }, []);
+
+  // Monitor backtest errors
+  useEffect(() => {
+    if (backtestError) {
+      addToast(backtestError, 'error');
+    }
+  }, [backtestError, addToast]);
+
+  // Connection status check
+  useEffect(() => {
+    const checkConnection = () => {
+      const ws = new WebSocket('ws://127.0.0.1:3000/ws/live');
+      ws.onopen = () => { setIsConnected(true); ws.close(); };
+      ws.onerror = () => { setIsConnected(false); };
+      ws.onclose = () => setIsConnected(false);
+    };
+    checkConnection();
+    const interval = setInterval(checkConnection, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     fetchWebhooks().then(setWebhooks).catch(console.error);
@@ -151,6 +181,26 @@ export function App() {
   const currentStrategyActive = activeStrategySymbols.includes(activeSymbol.replace('/', ''));
   const currentIndicators = indicatorConfigs[activeSymbol] ?? [];
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        if (currentStrategyCode && currentStrategyCode !== DEFAULT_STRATEGY_CODE) {
+          handleDeployStrategy(activeSymbol, currentStrategyCode);
+        }
+      }
+      if (e.ctrlKey && e.key === 'b') {
+        e.preventDefault();
+        if (view === 'trade') {
+          setView('backtest');
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [currentStrategyCode, activeSymbol, handleDeployStrategy, view]);
+
   const handleStrategyCodeChange = useCallback((code: string) => {
     setStrategyCodes(prev => ({ ...prev, [activeSymbol]: code }));
   }, [activeSymbol]);
@@ -182,8 +232,11 @@ export function App() {
     const result = await runBacktest(req);
     if (result) {
       setBacktestResult(result);
+      backtestTradesRef.current = result.trades || [];
+      setShowBacktestOverlay(true);
+      addToast('Backtest completed successfully', 'success');
     }
-  }, [runBacktest]);
+  }, [runBacktest, addToast]);
 
   const handleBacktestSave = useCallback(async () => {
     if (!backtestResult) return;
@@ -319,7 +372,7 @@ export function App() {
         view={view}
         onViewChange={setView}
         simState={simState}
-        isConnected={true}
+        isConnected={isConnected}
         onOpenSettings={() => setShowSettings(true)}
         alertCount={alerts.length}
       />
@@ -415,6 +468,8 @@ export function App() {
                     positions={simState.open_positions}
                     onUpdatePosition={updatePosition}
                     indicatorConfigs={currentIndicators}
+                    backtestTrades={backtestTradesRef.current}
+                    showBacktestOverlay={showBacktestOverlay}
                   />
                 </div>
                 <div className="h-[180px] shrink-0 border-t border-zinc-800">
@@ -488,7 +543,7 @@ export function App() {
           </div>
           <div className="overflow-y-auto p-4">
             {backtestResult ? (
-              <BacktestResults result={backtestResult} onSave={handleBacktestSave} />
+              <BacktestResults result={backtestResult} onSave={handleBacktestSave} onShowOnChart={() => { setView('trade'); setShowBacktestOverlay(true); }} />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center p-8">
                 <FlaskConical size={64} className="text-zinc-600 mb-4" />
@@ -574,6 +629,41 @@ export function App() {
         onClose={() => setShowStrategyBrowser(false)}
         onLoad={handleApplyCode}
       />
+
+      {/* Toast Notifications */}
+      {toasts.length > 0 && (
+        <div className="fixed top-16 right-4 z-50 space-y-2 max-w-sm">
+          {toasts.map(t => (
+            <div
+              key={t.id}
+              className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium border backdrop-blur-sm transition-all animate-in slide-in-from-right ${
+                t.type === 'error' ? 'bg-red-900/90 border-red-700 text-red-100' :
+                t.type === 'success' ? 'bg-green-900/90 border-green-700 text-green-100' :
+                'bg-zinc-800/90 border-zinc-700 text-zinc-100'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {t.type === 'error' && <AlertTriangle size={14} />}
+                <span>{t.message}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Backtest Overlay Toggle */}
+      {backtestResult && view === 'trade' && (
+        <button
+          onClick={() => setShowBacktestOverlay(!showBacktestOverlay)}
+          className={`fixed bottom-[200px] right-[320px] z-10 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+            showBacktestOverlay
+              ? 'bg-blue-600/20 border-blue-500/40 text-blue-400'
+              : 'bg-zinc-800/80 border-zinc-700 text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          {showBacktestOverlay ? 'Hide Trades' : 'Show Trades'}
+        </button>
+      )}
     </div>
   );
 }
@@ -585,6 +675,8 @@ function TabChart({
   positions,
   onUpdatePosition,
   indicatorConfigs,
+  backtestTrades,
+  showBacktestOverlay,
 }: {
   symbol: string;
   timeframe: number;
@@ -592,6 +684,8 @@ function TabChart({
   positions: any[];
   onUpdatePosition: (id: string, tp: number | null, sl: number | null) => void;
   indicatorConfigs: IndicatorConfig[];
+  backtestTrades?: BacktestTrade[];
+  showBacktestOverlay?: boolean;
 }) {
   const { candles, isInitializing } = useMarketDataForSymbol(symbol, timeframe);
 
@@ -613,6 +707,8 @@ function TabChart({
       onUpdatePosition={onUpdatePosition}
       chartType={chartType}
       indicatorConfigs={indicatorConfigs}
+      backtestTrades={backtestTrades}
+      showBacktestOverlay={showBacktestOverlay}
     />
   );
 }

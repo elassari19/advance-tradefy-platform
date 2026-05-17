@@ -4,13 +4,13 @@ use crate::indicators::{Indicator, IndicatorOutput, Plot, ParamDesc};
 fn ema_values(data: &[f64], period: usize) -> Vec<Option<f64>> {
     let mut result = vec![None; data.len()];
     if data.len() < period { return result; }
-    let multiplier = 2.0 / (period as f64 + 1.0);
+    let multiplier = crate::indicators::safe_div(2.0, period as f64 + 1.0);
     let first_sum: f64 = data[..period].iter().sum();
-    let mut ema = first_sum / period as f64;
+    let mut ema = crate::indicators::guarded(crate::indicators::safe_div(first_sum, period as f64));
     result[period - 1] = Some(ema);
     for i in period..data.len() {
         ema = (data[i] - ema) * multiplier + ema;
-        result[i] = Some(ema);
+        result[i] = Some(crate::indicators::guarded(ema));
     }
     result
 }
@@ -57,13 +57,25 @@ impl Indicator for MACD {
         let closes: Vec<f64> = candles.iter().map(|c| c.close).collect();
         let len = closes.len();
 
+        if !crate::indicators::ensure_minimum(candles, self.slow) {
+            let empty = vec![None; len];
+            return IndicatorOutput {
+                plots: vec![
+                    Plot::Line { id: "macd".into(), label: "MACD".into(), color: self.color.clone(), values: empty.clone() },
+                    Plot::Line { id: "macd_signal".into(), label: "Signal".into(), color: "#f59e0b".into(), values: empty.clone() },
+                    Plot::Histogram { id: "macd_hist".into(), color: "#22c55e".into(), values: empty },
+                    Plot::Hline { price: 0.0, color: "#6b7280".into(), style: "solid".into() },
+                ],
+            };
+        }
+
         let fast_ema = ema_values(&closes, self.fast);
         let slow_ema = ema_values(&closes, self.slow);
 
         let mut macd_line = vec![None; len];
         for i in 0..len {
             if let (Some(f), Some(s)) = (fast_ema[i], slow_ema[i]) {
-                macd_line[i] = Some(f - s);
+                macd_line[i] = Some(crate::indicators::guarded(f - s));
             }
         }
 
@@ -79,7 +91,7 @@ impl Indicator for MACD {
         let mut histogram = vec![None; len];
         for i in 0..len {
             if let (Some(m), Some(s)) = (macd_line[i], signal_line[i]) {
-                histogram[i] = Some(m - s);
+                histogram[i] = Some(crate::indicators::guarded(m - s));
             }
         }
 

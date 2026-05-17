@@ -7,12 +7,13 @@ import type { BacktestResult, BacktestTrade } from '../../hooks/useBacktest';
 interface BacktestResultsProps {
   result: BacktestResult;
   onSave?: () => void;
+  onShowOnChart?: () => void;
 }
 
 type SortField = '#' | 'side' | 'entry' | 'exit' | 'pnl' | 'pct' | 'reason' | 'duration';
 type SortDir = 'asc' | 'desc';
 
-export const BacktestResults: React.FC<BacktestResultsProps> = ({ result, onSave }) => {
+export const BacktestResults: React.FC<BacktestResultsProps> = ({ result, onSave, onShowOnChart }) => {
   const { summary, trades, equity_curve } = result;
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<IChartApi | null>(null);
@@ -149,6 +150,15 @@ export const BacktestResults: React.FC<BacktestResultsProps> = ({ result, onSave
             >
               <Save size={12} />
               Save Result
+            </button>
+          )}
+          {onShowOnChart && (
+            <button
+              onClick={onShowOnChart}
+              className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold text-blue-400 hover:text-blue-300 bg-blue-900/20 hover:bg-blue-900/40 border border-blue-800/40 transition-all"
+            >
+              <TrendingUp size={12} />
+              Show on Chart
             </button>
           )}
         </div>

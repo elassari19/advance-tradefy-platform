@@ -99,3 +99,69 @@ impl CandleAggregator {
         self.current.as_ref()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_tick(price: f64, time: u64) -> Tick {
+        Tick { symbol: "BTCUSDT".into(), price, time }
+    }
+
+    #[test]
+    fn test_empty_start() {
+        let agg = CandleAggregator::new("BTCUSDT", 5);
+        assert!(agg.get_current_candle().is_none());
+        assert!(agg.get_history().is_empty());
+    }
+
+    #[test]
+    fn test_single_tick_creates_candle() {
+        let mut agg = CandleAggregator::new("BTCUSDT", 5);
+        agg.process_tick(&make_tick(50000.0, 0));
+        let candle = agg.get_current_candle().unwrap();
+        assert_eq!(candle.open, 50000.0);
+        assert_eq!(candle.high, 50000.0);
+        assert_eq!(candle.close, 50000.0);
+    }
+
+    #[test]
+    fn test_timeframe_boundary_rollover() {
+        let mut agg = CandleAggregator::new("BTCUSDT", 5);
+        agg.process_tick(&make_tick(50000.0, 0));
+        let completed = agg.process_tick(&make_tick(50100.0, 300_000));
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0].close, 50000.0);
+    }
+
+    #[test]
+    fn test_load_history() {
+        let mut agg = CandleAggregator::new("BTCUSDT", 5);
+        agg.load_history(vec![
+            Candle { time: 0, open: 100.0, high: 110.0, low: 90.0, close: 105.0, volume: 1000.0, symbol: "BTCUSDT".into(), is_closed: true },
+        ]);
+        assert_eq!(agg.get_history().len(), 1);
+    }
+
+    #[test]
+    fn test_max_completed_candles() {
+        let mut agg = CandleAggregator::new("BTCUSDT", 1);
+        for i in 0..600u64 {
+            agg.process_tick(&make_tick(50000.0, i * 60_000));
+        }
+        assert!(agg.get_history().len() <= 500);
+        assert_eq!(agg.get_history().len(), 500);
+    }
+
+    #[test]
+    fn test_multiple_ticks_same_candle() {
+        let mut agg = CandleAggregator::new("BTCUSDT", 5);
+        agg.process_tick(&make_tick(50000.0, 0));
+        agg.process_tick(&make_tick(50100.0, 60_000));
+        agg.process_tick(&make_tick(49900.0, 120_000));
+        let candle = agg.get_current_candle().unwrap();
+        assert_eq!(candle.high, 50100.0);
+        assert_eq!(candle.low, 49900.0);
+        assert_eq!(candle.close, 49900.0);
+    }
+}

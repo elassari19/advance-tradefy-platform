@@ -1,4 +1,4 @@
-use crate::models::{AlertActionConfig, AlertRule, Candle, TriggeredAlert};
+use crate::models::{AlertRule, Candle, TriggeredAlert};
 use crate::candle_aggregator::CandleAggregator;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -193,6 +193,112 @@ fn should_fire(rule: &AlertRule, last_fired: &HashMap<String, u64>, current_time
         }
         "OnEveryTick" => true,
         _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_candle(close: f64, high: f64, low: f64, time: u64) -> Candle {
+        Candle { time, open: close, high, low, close, volume: 1000.0, symbol: "BTCUSDT".into(), is_closed: true }
+    }
+
+    fn make_rule(id: &str, condition_type: &str, params: serde_json::Value) -> AlertRule {
+        AlertRule {
+            id: id.to_string(),
+            name: format!("Test {}", id),
+            symbol: "BTCUSDT".to_string(),
+            timeframe: "5m".to_string(),
+            condition_type: condition_type.to_string(),
+            condition_params: params,
+            frequency: "OncePerBarClose".to_string(),
+            actions: vec![],
+            enabled: true,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn test_crossover_detection() {
+        let engine = AlertEngine::new();
+        let rule = make_rule("r1", "crossing", serde_json::json!({
+            "series1": "close", "series2": "open",
+            "prev1": 100.0, "prev2": 110.0,
+        }));
+        engine.add_rule(rule);
+        let candle = make_candle(105.0, 110.0, 100.0, 100);
+        let agg = CandleAggregator::new("BTCUSDT", 5);
+        let triggered = engine.evaluate(&candle, &agg);
+        assert_eq!(triggered.len(), 1);
+        assert_eq!(triggered[0].condition_type, "crossing");
+    }
+
+    #[test]
+    fn test_threshold_greater_than() {
+        let engine = AlertEngine::new();
+        let rule = make_rule("r2", "greater_than", serde_json::json!({
+            "series": "close", "value": 100.0,
+        }));
+        engine.add_rule(rule);
+        let candle = make_candle(150.0, 160.0, 140.0, 100);
+        let agg = CandleAggregator::new("BTCUSDT", 5);
+        assert_eq!(engine.evaluate(&candle, &agg).len(), 1);
+        let candle2 = make_candle(50.0, 60.0, 40.0, 200);
+        assert_eq!(engine.evaluate(&candle2, &agg).len(), 0);
+    }
+
+    #[test]
+    fn test_frequency_limiting() {
+        let engine = AlertEngine::new();
+        let mut rule = make_rule("r3", "greater_than", serde_json::json!({
+            "series": "close", "value": 100.0,
+        }));
+        rule.frequency = "OncePerBar".into();
+        engine.add_rule(rule);
+        let agg = CandleAggregator::new("BTCUSDT", 5);
+        let c1 = make_candle(150.0, 160.0, 140.0, 100);
+        assert_eq!(engine.evaluate(&c1, &agg).len(), 1);
+        let c2 = make_candle(150.0, 160.0, 140.0, 100);
+        assert_eq!(engine.evaluate(&c2, &agg).len(), 0);
+        let c3 = make_candle(150.0, 160.0, 140.0, 200);
+        assert_eq!(engine.evaluate(&c3, &agg).len(), 1);
+    }
+
+    #[test]
+    fn test_disabled_rule() {
+        let engine = AlertEngine::new();
+        let mut rule = make_rule("r4", "greater_than", serde_json::json!({
+            "series": "close", "value": 100.0,
+        }));
+        rule.enabled = false;
+        engine.add_rule(rule);
+        let candle = make_candle(150.0, 160.0, 140.0, 100);
+        let agg = CandleAggregator::new("BTCUSDT", 5);
+        assert_eq!(engine.evaluate(&candle, &agg).len(), 0);
+    }
+
+    #[test]
+    fn test_range_condition() {
+        let engine = AlertEngine::new();
+        let rule = make_rule("r5", "range", serde_json::json!({
+            "series": "close", "upper": 200.0, "lower": 100.0,
+        }));
+        engine.add_rule(rule);
+        let agg = CandleAggregator::new("BTCUSDT", 5);
+        assert_eq!(engine.evaluate(&make_candle(150.0, 160.0, 140.0, 100), &agg).len(), 1);
+        assert_eq!(engine.evaluate(&make_candle(50.0, 60.0, 40.0, 200), &agg).len(), 0);
+    }
+
+    #[test]
+    fn test_rule_removal() {
+        let engine = AlertEngine::new();
+        engine.add_rule(make_rule("r6", "greater_than", serde_json::json!({
+            "series": "close", "value": 100.0,
+        })));
+        assert_eq!(engine.get_rules().len(), 1);
+        assert!(engine.remove_rule("r6"));
+        assert_eq!(engine.get_rules().len(), 0);
     }
 }
 

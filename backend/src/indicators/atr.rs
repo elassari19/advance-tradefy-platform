@@ -43,7 +43,7 @@ impl Indicator for ATR {
         let len = candles.len();
         let mut values = vec![None; len];
 
-        if len < self.period + 1 {
+        if !crate::indicators::ensure_minimum(candles, self.period + 1) {
             return IndicatorOutput { plots: vec![Plot::Line {
                 id: format!("atr_{}", self.period), label: format!("ATR({})", self.period),
                 color: self.color.clone(), values,
@@ -55,13 +55,13 @@ impl Indicator for ATR {
             tr_values.push(true_range(&candles[i], candles[i - 1].close));
         }
 
-        let first_atr: f64 = tr_values[..self.period].iter().sum::<f64>() / self.period as f64;
+        let first_atr = crate::indicators::guarded(crate::indicators::safe_div(tr_values[..self.period].iter().sum::<f64>(), self.period as f64));
         values[self.period] = Some(first_atr);
 
         for i in (self.period + 1)..len {
             let tr = tr_values[i - 1];
             let prev = values[i - 1].unwrap();
-            values[i] = Some((prev * (self.period as f64 - 1.0) + tr) / self.period as f64);
+            values[i] = Some(crate::indicators::guarded(crate::indicators::safe_div(prev * (self.period as f64 - 1.0) + tr, self.period as f64)));
         }
 
         IndicatorOutput {
