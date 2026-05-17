@@ -125,13 +125,14 @@
 
 ### Backend — Indicator Pipeline
 
-- `[ ]` Implement `IndicatorPipeline` struct (list of indicators, pane assignment)
-- `[ ]` Implement `IndicatorPipeline::evaluate_all(candles) -> Vec<IndicatorOutput>`
+- `[x]` Implement `IndicatorPipeline` struct (list of indicators, pane assignment)
+- `[x]` Implement `IndicatorPipeline::evaluate_all(candles) -> Vec<PipelineOutput>`
 - `[x]` Create `POST /api/indicators/evaluate-batch` endpoint
 - `[x]` Create `IndicatorParam` serialization for JSON API
 - `[x]` Create `GET /api/indicators/list` endpoint (returns available indicators + their params)
-- `[ ]` Implement multi-timeframe resolution (`request.security()`)
-- `[ ]` Wire MTF into `CandleAggregator` map lookup
+- `[x]` Implement multi-timeframe resolution (`resolve_mtf()`)
+- `[x]` Wire MTF into `CandleAggregator` map lookup
+- `[x]` Create `POST /api/indicators/mtf/resolve` endpoint
 
 ### Backend — Custom Indicators (Enhanced)
 

@@ -7,8 +7,10 @@ pub mod atr;
 pub mod stochastic;
 pub mod vwap;
 
+use crate::candle_aggregator::CandleAggregator;
 use crate::models::Candle;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 pub trait Indicator {
     fn name(&self) -> &str;
@@ -44,6 +46,93 @@ pub enum Plot {
     Band { id: String, label_upper: String, label_lower: String, color: String, upper: Vec<Option<f64>>, lower: Vec<Option<f64>>, fill_color: String },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Pane {
+    Overlay,
+    Sub,
+    Auto,
+}
+
+impl Default for Pane {
+    fn default() -> Self { Pane::Auto }
+}
+
+pub struct IndicatorPipeline {
+    pub entries: Vec<PipelineEntry>,
+}
+
+pub struct PipelineEntry {
+    pub indicator: Box<dyn Indicator>,
+    pub pane: Pane,
+    pub color: String,
+}
+
+impl IndicatorPipeline {
+    pub fn new() -> Self {
+        Self { entries: Vec::new() }
+    }
+
+    pub fn add(&mut self, indicator: Box<dyn Indicator>, pane: Pane, color: String) {
+        self.entries.push(PipelineEntry { indicator, pane, color });
+    }
+
+    pub fn evaluate_all(&self, candles: &[Candle]) -> Vec<PipelineOutput> {
+        self.entries.iter().map(|entry| {
+            let output = entry.indicator.calculate(candles);
+            let pane = match entry.pane {
+                Pane::Auto => auto_detect_pane(entry.indicator.name()),
+                other => other,
+            };
+            PipelineOutput { output, pane }
+        }).collect()
+    }
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PipelineOutput {
+    pub output: IndicatorOutput,
+    pub pane: Pane,
+}
+
+fn auto_detect_pane(name: &str) -> Pane {
+    match name {
+        "RSI" | "MACD" | "Stochastic" => Pane::Sub,
+        _ => Pane::Overlay,
+    }
+}
+
+fn timeframe_minutes(timeframe: &str) -> Option<u32> {
+    match timeframe {
+        "1m" => Some(1), "5m" => Some(5), "15m" => Some(15),
+        "30m" => Some(30), "1h" => Some(60), "4h" => Some(240),
+        "1d" => Some(1440), "1w" => Some(10080),
+        _ => timeframe.trim_end_matches('m').parse().ok(),
+    }
+}
+
+pub fn resolve_mtf(
+    symbol: &str,
+    timeframe: &str,
+    expression: &str,
+    aggregators: &HashMap<(String, u32), CandleAggregator>,
+) -> Option<f64> {
+    let mins = timeframe_minutes(timeframe)?;
+    let agg = aggregators.get(&(symbol.to_string(), mins))?;
+    let candle = agg.get_current_candle()?;
+    match expression {
+        "open" => Some(candle.open),
+        "high" => Some(candle.high),
+        "low" => Some(candle.low),
+        "close" => Some(candle.close),
+        "volume" => Some(candle.volume),
+        "hl2" => Some((candle.high + candle.low) / 2.0),
+        "hlc3" | "typical" => Some((candle.high + candle.low + candle.close) / 3.0),
+        "ohlc4" => Some((candle.open + candle.high + candle.low + candle.close) / 4.0),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct EvaluateBatchRequest {
     pub candles: Vec<Candle>,
@@ -56,11 +145,13 @@ pub struct IndicatorRequest {
     pub indicator_type: String,
     pub params: serde_json::Value,
     pub color: Option<String>,
+    #[serde(default)]
+    pub pane: Pane,
 }
 
 #[derive(Debug, Serialize)]
 pub struct EvaluateBatchResponse {
-    pub results: Vec<IndicatorOutput>,
+    pub results: Vec<PipelineOutput>,
 }
 
 pub fn get_indicator(indicator_type: &str, params: &serde_json::Value, color: Option<&str>) -> Option<Box<dyn Indicator>> {

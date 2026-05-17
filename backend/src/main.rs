@@ -17,7 +17,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use indicators::{EvaluateBatchRequest, EvaluateBatchResponse};
+use indicators::{EvaluateBatchRequest, EvaluateBatchResponse, IndicatorPipeline, resolve_mtf};
 use backtest::BacktestEngine;
 use candle_aggregator::CandleAggregator;
 use futures_util::{SinkExt, StreamExt};
@@ -160,6 +160,7 @@ async fn main() {
         .route("/api/indicator/evaluate", post(evaluate_indicator_handler))
         .route("/api/indicators/evaluate-batch", post(evaluate_indicators_batch))
         .route("/api/indicators/list", get(list_indicators))
+        .route("/api/indicators/mtf/resolve", post(resolve_mtf_handler))
         .route("/api/backtest/run", post(run_backtest))
         .route("/api/backtest/save", post(save_backtest))
         .route("/api/backtest/list", get(list_backtests))
@@ -472,13 +473,12 @@ async fn evaluate_indicator_handler(
 async fn evaluate_indicators_batch(
     Json(payload): Json<EvaluateBatchRequest>,
 ) -> Result<Json<EvaluateBatchResponse>, (axum::http::StatusCode, Json<serde_json::Value>)> {
-    let mut results = Vec::with_capacity(payload.indicators.len());
+    let mut pipeline = IndicatorPipeline::new();
 
     for req in &payload.indicators {
         match indicators::get_indicator(&req.indicator_type, &req.params, req.color.as_deref()) {
             Some(indicator) => {
-                let output = indicator.calculate(&payload.candles);
-                results.push(output);
+                pipeline.add(indicator, req.pane, req.color.clone().unwrap_or_else(|| "#3b82f6".into()));
             }
             None => {
                 return Err((
@@ -489,7 +489,27 @@ async fn evaluate_indicators_batch(
         }
     }
 
+    let results = pipeline.evaluate_all(&payload.candles);
     Ok(Json(EvaluateBatchResponse { results }))
+}
+
+async fn resolve_mtf_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    let symbol = payload.get("symbol").and_then(|v| v.as_str()).unwrap_or("BTCUSDT");
+    let timeframe = payload.get("timeframe").and_then(|v| v.as_str()).unwrap_or("1h");
+    let expression = payload.get("expression").and_then(|v| v.as_str()).unwrap_or("close");
+
+    let aggregators = state.aggregators.lock().unwrap();
+    let value = resolve_mtf(symbol, timeframe, expression, &aggregators);
+
+    Json(serde_json::json!({
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "expression": expression,
+        "value": value,
+    }))
 }
 
 async fn list_indicators() -> Json<Vec<serde_json::Value>> {
