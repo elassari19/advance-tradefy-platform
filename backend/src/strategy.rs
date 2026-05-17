@@ -46,6 +46,54 @@ impl StrategyEngine {
         strategies.keys().cloned().collect()
     }
 
+    fn process_signal(&self, signal: &crate::python_runtime::PythonSignal, symbol: &str, price: f64, time: u64, webhook_configs: &[WebhookConfig]) {
+        match signal.action.as_str() {
+            "CLOSE" => {
+                let state = self.simulator.get_state();
+                for pos in &state.open_positions {
+                    if pos.symbol == symbol {
+                        let _ = self.simulator.close_position(&pos.id, time);
+                    }
+                }
+            }
+            "EXIT" => {
+                // Exit with optional TP/SL — close all positions for the symbol
+                let state = self.simulator.get_state();
+                for pos in &state.open_positions {
+                    if pos.symbol == symbol {
+                        let _ = self.simulator.close_position(&pos.id, time);
+                    }
+                }
+            }
+            action if action == "BUY" || action == "SELL" => {
+                let order = OrderRequest {
+                    symbol: symbol.to_string(),
+                    side: if action == "BUY" { TradeSide::Buy } else { TradeSide::Sell },
+                    quantity: signal.quantity,
+                    take_profit: signal.take_profit,
+                    stop_loss: signal.stop_loss,
+                };
+
+                if let Err(e) = self.simulator.place_order(order.clone(), price, time) {
+                    tracing::error!("Failed to execute strategy order: {}", e);
+                    return;
+                }
+
+                for config in webhook_configs.iter().filter(|c| c.enabled) {
+                    let config_clone = config.clone();
+                    let order_clone = order.clone();
+                    let p = price;
+                    tokio::spawn(async move {
+                        crate::webhooks::dispatch_webhook(config_clone.url, config_clone.secret_token, order_clone, p).await;
+                    });
+                }
+            }
+            _ => {
+                tracing::warn!("Unknown signal action: {}", signal.action);
+            }
+        }
+    }
+
     pub fn on_tick(&self, tick: Tick, webhook_configs: Vec<WebhookConfig>) {
         let instance = {
             let strategies = self.strategies.lock().unwrap();
@@ -53,6 +101,14 @@ impl StrategyEngine {
         };
 
         if let Some((code, runtime)) = instance {
+            let state = self.simulator.get_state();
+            let pos = state.open_positions.iter().find(|p| p.symbol == tick.symbol);
+            let (pos_size, pos_avg, equity) = match pos {
+                Some(p) => (p.quantity, p.entry_price, state.balance + state.open_positions.iter().map(|pos| pos.pnl).sum::<f64>()),
+                None => (0.0, 0.0, state.balance),
+            };
+            runtime.set_position_state(pos_size, pos_avg, equity);
+
             match runtime.execute_strategy(&code, tick.price) {
                 Ok(_) => {}
                 Err(e) => {
@@ -62,27 +118,7 @@ impl StrategyEngine {
 
             if let Some(signal) = runtime.get_signal() {
                 tracing::info!("Strategy signal: {} qty={}", signal.action, signal.quantity);
-
-                let order = OrderRequest {
-                    symbol: tick.symbol.clone(),
-                    side: if signal.action == "BUY" { TradeSide::Buy } else { TradeSide::Sell },
-                    quantity: signal.quantity,
-                    take_profit: signal.take_profit,
-                    stop_loss: signal.stop_loss,
-                };
-
-                if let Err(e) = self.simulator.place_order(order.clone(), tick.price, tick.time) {
-                    tracing::error!("Failed to execute strategy order: {}", e);
-                } else {
-                    for config in webhook_configs.iter().filter(|c| c.enabled) {
-                        let config_clone = config.clone();
-                        let order_clone = order.clone();
-                        let price = tick.price;
-                        tokio::spawn(async move {
-                            crate::webhooks::dispatch_webhook(config_clone.url, config_clone.secret_token, order_clone, price).await;
-                        });
-                    }
-                }
+                self.process_signal(&signal, &tick.symbol, tick.price, tick.time, &webhook_configs);
             }
         }
     }
@@ -94,6 +130,14 @@ impl StrategyEngine {
         };
 
         if let Some((code, runtime)) = instance {
+            let state = self.simulator.get_state();
+            let pos = state.open_positions.iter().find(|p| p.symbol == candle.symbol);
+            let (pos_size, pos_avg, equity) = match pos {
+                Some(p) => (p.quantity, p.entry_price, state.balance + state.open_positions.iter().map(|pos| pos.pnl).sum::<f64>()),
+                None => (0.0, 0.0, state.balance),
+            };
+            runtime.set_position_state(pos_size, pos_avg, equity);
+
             match runtime.execute_on_candle(&code, candle) {
                 Ok(_) => {}
                 Err(e) => {
@@ -103,27 +147,7 @@ impl StrategyEngine {
 
             if let Some(signal) = runtime.get_signal() {
                 tracing::info!("Strategy candle signal: {} qty={}", signal.action, signal.quantity);
-
-                let order = OrderRequest {
-                    symbol: candle.symbol.clone(),
-                    side: if signal.action == "BUY" { TradeSide::Buy } else { TradeSide::Sell },
-                    quantity: signal.quantity,
-                    take_profit: signal.take_profit,
-                    stop_loss: signal.stop_loss,
-                };
-
-                if let Err(e) = self.simulator.place_order(order.clone(), candle.close, candle.time) {
-                    tracing::error!("Failed to execute strategy order: {}", e);
-                } else {
-                    for config in webhook_configs.iter().filter(|c| c.enabled) {
-                        let config_clone = config.clone();
-                        let order_clone = order.clone();
-                        let price = candle.close;
-                        tokio::spawn(async move {
-                            crate::webhooks::dispatch_webhook(config_clone.url, config_clone.secret_token, order_clone, price).await;
-                        });
-                    }
-                }
+                self.process_signal(&signal, &candle.symbol, candle.close, candle.time, &webhook_configs);
             }
         }
     }

@@ -131,5 +131,29 @@ export function useBacktest() {
     }
   }, []);
 
-  return { runBacktest, saveBacktest, getBacktest, listBacktests, running, error };
+  const optimize = useCallback(async (req: any): Promise<any[] | null> => {
+    setRunning(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/backtest/optimize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Optimization failed');
+      }
+      const data = await res.json();
+      return data.results || [];
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Optimization request failed';
+      setError(msg);
+      return null;
+    } finally {
+      setRunning(false);
+    }
+  }, []);
+
+  return { runBacktest, saveBacktest, getBacktest, listBacktests, optimize, running, error };
 }

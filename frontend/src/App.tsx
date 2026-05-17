@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Plus, ChevronDown, BarChart3, FlaskConical, Bell } from "lucide-react";
+import { X, Plus, ChevronDown, BarChart3, FlaskConical } from "lucide-react";
 import { useMarketDataForSymbol } from "./hooks/useMarketData";
 import { useSimulator } from "./hooks/useSimulator";
 import { useBacktest } from "./hooks/useBacktest";
@@ -15,6 +15,8 @@ import { IndicatorPanel } from "./components/indicators/IndicatorPanel";
 import { CustomIndicatorModal } from "./components/CustomIndicatorModal";
 import { BacktestConfig } from "./components/backtest/BacktestConfig";
 import { BacktestResults } from "./components/backtest/BacktestResults";
+import { OptimizationPanel } from "./components/backtest/OptimizationPanel";
+import { StrategyBrowser } from "./components/terminal/StrategyBrowser";
 import { AlertCreator } from "./components/alerts/AlertCreator";
 import { AlertsList } from "./components/alerts/AlertsList";
 import type { WebhookConfig } from "./hooks/useSimulator";
@@ -61,6 +63,8 @@ export function App() {
   const [focusTab, setFocusTab] = useState<'positions' | 'history' | 'strategy' | 'logs' | undefined>(undefined);
 
   const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
+  const [showStrategyBrowser, setShowStrategyBrowser] = useState(false);
+  const [optimizeOpen, setOptimizeOpen] = useState(false);
 
   // ── Alert State ──
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
@@ -225,6 +229,24 @@ export function App() {
   const handleApplyCode = useCallback((code: string) => {
     setStrategyCodes(prev => ({ ...prev, [activeSymbol]: code }));
   }, [activeSymbol]);
+
+  const handleSaveStrategy = useCallback(async (name: string, code: string) => {
+    const rawSymbol = activeSymbol.replace('/', '');
+    const res = await fetch('http://127.0.0.1:3000/api/strategy/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, symbol: rawSymbol, timeframe: formatTimeframe(timeframe), code }),
+    });
+    if (!res.ok) throw new Error('Failed to save strategy');
+  }, [activeSymbol, timeframe]);
+
+  const handleLoadStrategy = useCallback(() => {
+    setShowStrategyBrowser(true);
+  }, []);
+
+  const handleOptimizeRun = useCallback(async () => {
+    setOptimizeOpen(true);
+  }, []);
 
   const handleAddSymbol = useCallback((symbol: string) => {
     setTabs(prev => {
@@ -407,6 +429,8 @@ export function App() {
                     onDeployStrategy={handleDeployStrategy}
                     onRemoveStrategy={handleRemoveStrategy}
                     onStrategyCodeChange={handleStrategyCodeChange}
+                    onSaveStrategy={handleSaveStrategy}
+                    onLoadStrategy={handleLoadStrategy}
                     focusTab={focusTab}
                   />
                 </div>
@@ -430,6 +454,29 @@ export function App() {
               onRun={handleBacktestRun}
               running={backtestRunning}
             />
+            <button
+              onClick={() => setOptimizeOpen(!optimizeOpen)}
+              className={`w-full flex items-center justify-between px-4 py-2 rounded-lg text-xs font-bold transition-all border ${
+                optimizeOpen
+                  ? 'bg-purple-600/10 border-purple-500/30 text-purple-400'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <span>Strategy Optimization</span>
+              <ChevronDown size={14} className={`transition-transform ${optimizeOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {optimizeOpen && (
+              <OptimizationPanel
+                strategyCode={currentStrategyCode}
+                symbol={activeSymbol.replace('/', '')}
+                timeframe="1h"
+                startTime={Math.floor(new Date(new Date().getTime() - 90 * 24 * 60 * 60 * 1000).getTime() / 1000)}
+                endTime={Math.floor(Date.now() / 1000)}
+                initialCapital={10000}
+                commission={0.001}
+                slippage={0.0001}
+              />
+            )}
             {backtestResult && (
               <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Strategy</h3>
@@ -520,6 +567,12 @@ export function App() {
         onClose={() => setShowTimeframeModal(false)}
         currentTimeframe={timeframe}
         onSelect={setTimeframe}
+      />
+
+      <StrategyBrowser
+        isOpen={showStrategyBrowser}
+        onClose={() => setShowStrategyBrowser(false)}
+        onLoad={handleApplyCode}
       />
     </div>
   );

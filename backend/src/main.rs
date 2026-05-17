@@ -23,7 +23,7 @@ use indicators::{EvaluateBatchRequest, EvaluateBatchResponse, IndicatorPipeline,
 use backtest::BacktestEngine;
 use candle_aggregator::CandleAggregator;
 use futures_util::{SinkExt, StreamExt};
-use models::{AIChatRequest, AlertRule, BacktestRequest, BinanceTicker, Candle, HistoryParams, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle, TriggeredAlert};
+use models::{AIChatRequest, AlertRule, BacktestRequest, BinanceTicker, Candle, HistoryParams, OptimizeRequest, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle, TriggeredAlert};
 use simulator::SimulatorEngine;
 use strategy::StrategyEngine;
 use serde::{Deserialize, Serialize};
@@ -104,6 +104,7 @@ async fn main() {
                 "migrations/003_create_backtest_results.sql",
                 "migrations/004_create_alert_rules.sql",
                 "migrations/005_create_webhook_logs.sql",
+                "migrations/006_create_saved_strategies.sql",
             ] {
                 let sql = match tokio::fs::read_to_string(migration).await {
                     Ok(content) => content,
@@ -182,9 +183,12 @@ async fn main() {
         .route("/api/indicators/custom/list", get(list_custom_indicators))
         .route("/api/indicators/custom/:id", delete(delete_custom_indicator))
         .route("/api/backtest/run", post(run_backtest))
+        .route("/api/backtest/optimize", post(run_backtest_optimize))
         .route("/api/backtest/save", post(save_backtest))
         .route("/api/backtest/list", get(list_backtests))
         .route("/api/backtest/:id", get(get_backtest_by_id))
+        .route("/api/strategy/save", post(save_strategy))
+        .route("/api/strategy/list", get(list_strategies))
         .route("/api/ai/chat", post(ai_chat))
         .layer(cors)
         .with_state(app_state);
@@ -708,6 +712,37 @@ async fn run_backtest(
     }
 }
 
+async fn run_backtest_optimize(
+    State(_state): State<Arc<AppState>>,
+    Json(payload): Json<OptimizeRequest>,
+) -> impl IntoResponse {
+    let engine = backtest::BacktestEngine::new(BacktestRequest {
+        strategy_code: payload.strategy_code.clone(),
+        symbol: payload.symbol.clone(),
+        timeframe: payload.timeframe.clone(),
+        start_time: payload.start_time,
+        end_time: payload.end_time,
+        initial_balance: payload.initial_balance,
+        commission: payload.commission,
+        slippage: payload.slippage,
+    });
+
+    match engine.run().await {
+        Ok(_) => {}
+        Err(e) => {
+            return (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": format!("Baseline run failed: {}", e) })));
+        }
+    }
+
+    match backtest::run_optimization(&payload).await {
+        Ok(results) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "results": results }))),
+        Err(e) => {
+            tracing::error!("Optimization error: {}", e);
+            (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e })))
+        }
+    }
+}
+
 async fn save_backtest(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<serde_json::Value>,
@@ -891,6 +926,82 @@ async fn list_backtests(
         }
         Err(e) => {
             tracing::error!("Failed to list backtests: {}", e);
+            Json(serde_json::json!({ "results": [], "error": e.to_string() }))
+        }
+    }
+}
+
+async fn save_strategy(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let db = match &state.db {
+        Some(pool) => pool,
+        None => return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "Database not available" })),
+        ),
+    };
+
+    let name = payload.get("name").and_then(|v| v.as_str()).unwrap_or("Untitled");
+    let symbol = payload.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+    let timeframe = payload.get("timeframe").and_then(|v| v.as_str()).unwrap_or("");
+    let code = payload.get("code").and_then(|v| v.as_str()).unwrap_or("");
+
+    if symbol.is_empty() || code.is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "symbol and code are required" })),
+        );
+    }
+
+    match sqlx::query_scalar::<_, uuid::Uuid>(
+        r#"INSERT INTO saved_strategies (name, symbol, timeframe, code) VALUES ($1, $2, $3, $4) RETURNING id"#,
+    )
+    .bind(name)
+    .bind(symbol)
+    .bind(timeframe)
+    .bind(code)
+    .fetch_one(db)
+    .await
+    {
+        Ok(id) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "id": id.to_string() }))),
+        Err(e) => {
+            tracing::error!("Failed to save strategy: {}", e);
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() })))
+        }
+    }
+}
+
+async fn list_strategies(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let db = match &state.db {
+        Some(pool) => pool,
+        None => return Json(serde_json::json!({ "results": [], "error": "Database not available" })),
+    };
+
+    match sqlx::query_as::<_, (uuid::Uuid, String, String, String, String, chrono::DateTime<chrono::Utc>)>(
+        r#"SELECT id, name, symbol, timeframe, code, created_at FROM saved_strategies ORDER BY created_at DESC LIMIT 50"#,
+    )
+    .fetch_all(db)
+    .await
+    {
+        Ok(rows) => {
+            let results: Vec<serde_json::Value> = rows.into_iter().map(|r| {
+                serde_json::json!({
+                    "id": r.0.to_string(),
+                    "name": r.1,
+                    "symbol": r.2,
+                    "timeframe": r.3,
+                    "code": r.4,
+                    "created_at": r.5,
+                })
+            }).collect();
+            Json(serde_json::json!({ "results": results }))
+        }
+        Err(e) => {
+            tracing::error!("Failed to list strategies: {}", e);
             Json(serde_json::json!({ "results": [], "error": e.to_string() }))
         }
     }

@@ -307,3 +307,40 @@ pub struct BacktestResult {
     pub equity_curve: Vec<EquityPoint>,
     pub request: BacktestRequest,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ParameterRange {
+    pub name: String,
+    pub min: f64,
+    pub max: f64,
+    pub step: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OptimizeRequest {
+    pub strategy_code: String,
+    pub symbol: String,
+    pub timeframe: String,
+    pub start_time: u64,
+    pub end_time: u64,
+    pub initial_balance: f64,
+    pub commission: f64,
+    pub slippage: f64,
+    pub ranges: Vec<ParameterRange>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OptimizationResult {
+    pub params: std::collections::HashMap<String, f64>,
+    pub summary: BacktestResultSummary,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavedStrategy {
+    pub id: String,
+    pub name: String,
+    pub symbol: String,
+    pub timeframe: String,
+    pub code: String,
+    pub created_at: u64,
+}

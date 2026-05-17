@@ -1,9 +1,10 @@
 use crate::models::{
     BacktestRequest, BacktestResult, BacktestResultSummary, BacktestTrade,
-    Candle, EquityPoint, OrderRequest, TradeSide,
+    Candle, EquityPoint, OptimizeRequest, OptimizationResult, OrderRequest, TradeSide,
 };
 use crate::python_runtime::PythonRuntime;
 use crate::simulator::SimulatorEngine;
+use std::collections::HashMap;
 
 pub struct BacktestEngine {
     pub request: BacktestRequest,
@@ -86,22 +87,45 @@ impl BacktestEngine {
         let mut bar_index = 0u32;
 
         for candle in &candles {
+            let state = engine.get_state();
+            let pos = state.open_positions.iter().find(|p| p.symbol == self.request.symbol);
+            let (pos_size, pos_avg, equity) = match pos {
+                Some(p) => (p.quantity, p.entry_price, state.balance + state.open_positions.iter().map(|pos| pos.pnl).sum::<f64>()),
+                None => (0.0, 0.0, state.balance),
+            };
+            runtime.set_position_state(pos_size, pos_avg, equity);
+
             let _ = runtime.execute_on_candle(&self.request.strategy_code, candle);
 
             if let Some(signal) = runtime.get_signal() {
-                let order = OrderRequest {
-                    symbol: self.request.symbol.clone(),
-                    side: if signal.action == "BUY" { TradeSide::Buy } else { TradeSide::Sell },
-                    quantity: signal.quantity,
-                    take_profit: signal.take_profit,
-                    stop_loss: signal.stop_loss,
-                };
-                let slip = candle.close * self.request.slippage;
-                let fill_price = match order.side {
-                    TradeSide::Buy => candle.close + slip,
-                    TradeSide::Sell => candle.close - slip,
-                };
-                let _ = engine.place_order(order, fill_price, candle.time);
+                match signal.action.as_str() {
+                    "CLOSE" | "EXIT" => {
+                        let st = engine.get_state();
+                        for p in &st.open_positions {
+                            if p.symbol == self.request.symbol {
+                                let _ = engine.close_position(&p.id, candle.time);
+                            }
+                        }
+                    }
+                    action if action == "BUY" || action == "SELL" => {
+                        let order = OrderRequest {
+                            symbol: self.request.symbol.clone(),
+                            side: if action == "BUY" { TradeSide::Buy } else { TradeSide::Sell },
+                            quantity: signal.quantity,
+                            take_profit: signal.take_profit,
+                            stop_loss: signal.stop_loss,
+                        };
+                        let slip = candle.close * self.request.slippage;
+                        let fill_price = match order.side {
+                            TradeSide::Buy => candle.close + slip,
+                            TradeSide::Sell => candle.close - slip,
+                        };
+                        let _ = engine.place_order(order, fill_price, candle.time);
+                    }
+                    _ => {
+                        tracing::warn!("Unknown backtest signal action: {}", signal.action);
+                    }
+                }
             }
 
             engine.process_candle(candle);
@@ -289,4 +313,83 @@ fn compute_sharpe_ratio(equity_values: &[f64], initial_balance: f64) -> f64 {
 
     let risk_free_rate = 0.05 / 365.0;
     (mean_return - risk_free_rate) / std_dev * (returns.len() as f64).sqrt()
+}
+
+pub async fn run_optimization(request: &OptimizeRequest) -> Result<Vec<OptimizationResult>, String> {
+    let mut param_values: Vec<(String, Vec<f64>)> = Vec::new();
+    for range in &request.ranges {
+        let mut values = Vec::new();
+        let mut v = range.min;
+        while v <= range.max {
+            values.push(v);
+            v = (v * 1000.0).round() / 1000.0;
+            v += range.step;
+        }
+        if values.is_empty() {
+            values.push(range.min);
+        }
+        param_values.push((range.name.clone(), values));
+    }
+
+    let base_code = request.strategy_code.clone();
+    let mut results: Vec<OptimizationResult> = Vec::new();
+
+    let product = cartesian_product(&param_values);
+    for combo in product {
+        let mut code = base_code.clone();
+        let mut params = HashMap::new();
+        for (name, val) in &combo {
+            code = code.replace(&format!("{{{{{}}}}}", name), &val.to_string());
+            params.insert(name.clone(), *val);
+        }
+
+        let bt_req = BacktestRequest {
+            strategy_code: code,
+            symbol: request.symbol.clone(),
+            timeframe: request.timeframe.clone(),
+            start_time: request.start_time,
+            end_time: request.end_time,
+            initial_balance: request.initial_balance,
+            commission: request.commission,
+            slippage: request.slippage,
+        };
+
+        let engine = BacktestEngine::new(bt_req);
+        match engine.run().await {
+            Ok(result) => {
+                results.push(OptimizationResult {
+                    params,
+                    summary: result.summary,
+                });
+            }
+            Err(e) => {
+                tracing::warn!("Optimization run failed for params {:?}: {}", params, e);
+            }
+        }
+    }
+
+    results.sort_by(|a, b| {
+        b.summary.sharpe_ratio.partial_cmp(&a.summary.sharpe_ratio).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    Ok(results)
+}
+
+fn cartesian_product(param_values: &[(String, Vec<f64>)]) -> Vec<Vec<(String, f64)>> {
+    if param_values.is_empty() {
+        return vec![vec![]];
+    }
+    let mut result = vec![vec![]];
+    for (name, values) in param_values {
+        let mut new_result = Vec::new();
+        for combo in &result {
+            for val in values {
+                let mut new_combo = combo.clone();
+                new_combo.push((name.clone(), *val));
+                new_result.push(new_combo);
+            }
+        }
+        result = new_result;
+    }
+    result
 }

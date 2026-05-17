@@ -1,165 +1,331 @@
 use pyo3::{prelude::*, types::PyDict, types::PyList};
 use serde::{Deserialize, Serialize};
 
-const TA_LIBRARY: &str = r#"
-def ta_sma(source, period):
-    result = [None] * len(source)
-    for i in range(period - 1, len(source)):
+pub const TA_LIBRARY: &str = r#"
+def _to_list(src):
+    return src._data if hasattr(src, '_data') else list(src)
+
+class ta:
+    @staticmethod
+    def sma(source, period):
+        data = _to_list(source)
+        n = len(data)
+        result = [None] * n
+        for i in range(period - 1, n):
+            s = 0.0
+            for j in range(i - period + 1, i + 1):
+                v = data[j]
+                s += v if v is not None else 0.0
+            result[i] = s / period
+        return result
+
+    @staticmethod
+    def ema(source, period):
+        data = _to_list(source)
+        n = len(data)
+        result = [None] * n
+        if n < period: return result
+        multiplier = 2.0 / (period + 1)
         s = 0.0
-        for j in range(i - period + 1, i + 1):
-            v = source[j]
-            if v is None: v = 0.0
-            s += v
-        result[i] = s / period
-    return result
+        for j in range(period):
+            v = data[j]
+            s += v if v is not None else 0.0
+        ema = s / period
+        result[period - 1] = ema
+        for i in range(period, n):
+            v = data[i] if data[i] is not None else 0.0
+            ema = (v - ema) * multiplier + ema
+            result[i] = ema
+        return result
 
-def ta_ema(source, period):
-    result = [None] * len(source)
-    if len(source) < period: return result
-    multiplier = 2.0 / (period + 1)
-    s = 0.0
-    for j in range(period):
-        v = source[j]
-        if v is None: v = 0.0
-        s += v
-    ema = s / period
-    result[period - 1] = ema
-    for i in range(period, len(source)):
-        v = source[i] if source[i] is not None else 0.0
-        ema = (v - ema) * multiplier + ema
-        result[i] = ema
-    return result
-
-def ta_rsi(source, period):
-    result = [None] * len(source)
-    if len(source) < period + 1: return result
-    gains = []
-    losses = []
-    for i in range(1, len(source)):
-        a = source[i] if source[i] is not None else 0.0
-        b = source[i-1] if source[i-1] is not None else 0.0
-        diff = a - b
-        gains.append(diff if diff > 0 else 0.0)
-        losses.append(-diff if diff < 0 else 0.0)
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
-    if avg_loss == 0:
-        result[period] = 100.0
-    else:
-        rs = avg_gain / avg_loss
-        result[period] = 100.0 - 100.0 / (1.0 + rs)
-    for i in range(period + 1, len(source)):
-        avg_gain = (avg_gain * (period - 1) + gains[i-1]) / period
-        avg_loss = (avg_loss * (period - 1) + losses[i-1]) / period
+    @staticmethod
+    def rsi(source, period):
+        data = _to_list(source)
+        n = len(data)
+        result = [None] * n
+        if n < period + 1: return result
+        gains = []
+        losses = []
+        for i in range(1, n):
+            a = data[i] if data[i] is not None else 0.0
+            b = data[i-1] if data[i-1] is not None else 0.0
+            diff = a - b
+            gains.append(diff if diff > 0 else 0.0)
+            losses.append(-diff if diff < 0 else 0.0)
+        avg_gain = sum(gains[:period]) / period
+        avg_loss = sum(losses[:period]) / period
         if avg_loss == 0:
-            result[i] = 100.0
+            result[period] = 100.0
         else:
             rs = avg_gain / avg_loss
-            result[i] = 100.0 - 100.0 / (1.0 + rs)
-    return result
+            result[period] = 100.0 - 100.0 / (1.0 + rs)
+        for i in range(period + 1, n):
+            avg_gain = (avg_gain * (period - 1) + gains[i-1]) / period
+            avg_loss = (avg_loss * (period - 1) + losses[i-1]) / period
+            if avg_loss == 0:
+                result[i] = 100.0
+            else:
+                rs = avg_gain / avg_loss
+                result[i] = 100.0 - 100.0 / (1.0 + rs)
+        return result
 
-def ta_macd(source, fast, slow, signal):
-    fast_ema = ta_ema(source, fast)
-    slow_ema = ta_ema(source, slow)
-    macd_line = [None] * len(source)
-    for i in range(len(source)):
-        if fast_ema[i] is not None and slow_ema[i] is not None:
-            macd_line[i] = fast_ema[i] - slow_ema[i]
-    macd_values = [v for v in macd_line if v is not None]
-    offset = len(source) - len(macd_values)
-    signal_ema = ta_ema(macd_values, signal)
-    signal_line = [None] * len(source)
-    for i in range(len(signal_ema)):
-        if signal_ema[i] is not None:
-            signal_line[offset + i] = signal_ema[i]
-    histogram = [None] * len(source)
-    for i in range(len(source)):
-        if macd_line[i] is not None and signal_line[i] is not None:
-            histogram[i] = macd_line[i] - signal_line[i]
-    return macd_line, signal_line, histogram
+    @staticmethod
+    def macd(source, fast, slow, signal):
+        data = _to_list(source)
+        n = len(data)
+        fast_ema = ta.ema(data, fast)
+        slow_ema = ta.ema(data, slow)
+        macd_line = [None] * n
+        for i in range(n):
+            if fast_ema[i] is not None and slow_ema[i] is not None:
+                macd_line[i] = fast_ema[i] - slow_ema[i]
+        macd_values = [v for v in macd_line if v is not None]
+        offset = n - len(macd_values)
+        signal_ema = ta.ema(macd_values, signal)
+        signal_line = [None] * n
+        for i in range(len(signal_ema)):
+            if signal_ema[i] is not None:
+                signal_line[offset + i] = signal_ema[i]
+        histogram = [None] * n
+        for i in range(n):
+            if macd_line[i] is not None and signal_line[i] is not None:
+                histogram[i] = macd_line[i] - signal_line[i]
+        return macd_line, signal_line, histogram
 
-def ta_bb(source, period, stddev):
-    result = [None] * len(source)
-    upper = [None] * len(source)
-    lower = [None] * len(source)
-    for i in range(period - 1, len(source)):
-        slice_vals = source[i-period+1:i+1]
-        clean = [v if v is not None else 0.0 for v in slice_vals]
-        mean = sum(clean) / period
-        variance = sum((v - mean) ** 2 for v in clean) / period
-        std = variance ** 0.5
-        result[i] = mean
-        upper[i] = mean + stddev * std
-        lower[i] = mean - stddev * std
-    return result, upper, lower
+    @staticmethod
+    def bb(source, period, stddev):
+        data = _to_list(source)
+        n = len(data)
+        middle = [None] * n
+        upper = [None] * n
+        lower = [None] * n
+        for i in range(period - 1, n):
+            slice_vals = data[i-period+1:i+1]
+            clean = [v if v is not None else 0.0 for v in slice_vals]
+            mean = sum(clean) / period
+            variance = sum((v - mean) ** 2 for v in clean) / period
+            std = variance ** 0.5
+            middle[i] = mean
+            upper[i] = mean + stddev * std
+            lower[i] = mean - stddev * std
+        return middle, upper, lower
 
-def ta_atr(candles, period):
-    result = [None] * len(candles)
-    if len(candles) < period + 1: return result
-    tr_values = []
-    for i in range(1, len(candles)):
-        hl = candles[i]["high"] - candles[i]["low"]
-        hc = abs(candles[i]["high"] - candles[i-1]["close"])
-        lc = abs(candles[i]["low"] - candles[i-1]["close"])
-        tr_values.append(max(hl, hc, lc))
-    atr = sum(tr_values[:period]) / period
-    result[period] = atr
-    for i in range(period + 1, len(candles)):
-        atr = (atr * (period - 1) + tr_values[i-1]) / period
-        result[i] = atr
-    return result
+    @staticmethod
+    def atr(length):
+        h = _to_list(high)
+        l = _to_list(low)
+        c = _to_list(close)
+        n = len(h)
+        result = [None] * n
+        if n < length + 1: return result
+        tr_values = []
+        for i in range(1, n):
+            hl = h[i] - l[i]
+            hc = abs(h[i] - c[i-1])
+            lc = abs(l[i] - c[i-1])
+            tr_values.append(max(hl, hc, lc))
+        atr_val = sum(tr_values[:length]) / length
+        result[length] = atr_val
+        for i in range(length + 1, n):
+            atr_val = (atr_val * (length - 1) + tr_values[i-1]) / length
+            result[i] = atr_val
+        return result
 
-def ta_stoch(candles, k_period, k_smoothing, d_period):
-    close = [c["close"] for c in candles]
-    raw_k = [None] * len(candles)
-    for i in range(k_period - 1, len(candles)):
-        highs = [candles[j]["high"] for j in range(i-k_period+1, i+1)]
-        lows = [candles[j]["low"] for j in range(i-k_period+1, i+1)]
-        highest = max(highs)
-        lowest = min(lows)
-        if highest - lowest != 0:
-            raw_k[i] = (close[i] - lowest) / (highest - lowest) * 100
-        else:
-            raw_k[i] = 50.0
-    k_line = ta_sma(raw_k, k_smoothing) if k_smoothing > 1 else raw_k
-    d_line = ta_sma(k_line, d_period)
-    return k_line, d_line
+    @staticmethod
+    def stoch(high_src, low_src, close_src, k_period, k_smoothing=3, d_period=3):
+        h = _to_list(high_src)
+        l = _to_list(low_src)
+        c = _to_list(close_src)
+        n = len(c)
+        raw_k = [None] * n
+        for i in range(k_period - 1, n):
+            chunk_high = h[i-k_period+1:i+1]
+            chunk_low = l[i-k_period+1:i+1]
+            highest = max(chunk_high)
+            lowest = min(chunk_low)
+            if highest - lowest != 0:
+                raw_k[i] = (c[i] - lowest) / (highest - lowest) * 100
+            else:
+                raw_k[i] = 50.0
+        k_line = ta.sma(raw_k, k_smoothing) if k_smoothing > 1 else raw_k[:]
+        d_line = ta.sma(k_line, d_period)
+        return k_line, d_line
 
-def ta_crossover(a, b):
-    if len(a) < 2 or len(b) < 2: return False
-    a_prev = a[-2] if a[-2] is not None else 0.0
-    a_curr = a[-1] if a[-1] is not None else 0.0
-    b_prev = b[-2] if b[-2] is not None else 0.0
-    b_curr = b[-1] if b[-1] is not None else 0.0
-    return a_prev < b_prev and a_curr > b_curr
+    @staticmethod
+    def crossover(a, b):
+        a = _to_list(a)
+        b = _to_list(b)
+        if len(a) < 2 or len(b) < 2: return False
+        a_prev = a[-2] if a[-2] is not None else 0.0
+        a_curr = a[-1] if a[-1] is not None else 0.0
+        b_prev = b[-2] if b[-2] is not None else 0.0
+        b_curr = b[-1] if b[-1] is not None else 0.0
+        return a_prev < b_prev and a_curr > b_curr
 
-def ta_crossunder(a, b):
-    if len(a) < 2 or len(b) < 2: return False
-    a_prev = a[-2] if a[-2] is not None else 0.0
-    a_curr = a[-1] if a[-1] is not None else 0.0
-    b_prev = b[-2] if b[-2] is not None else 0.0
-    b_curr = b[-1] if b[-1] is not None else 0.0
-    return a_prev > b_prev and a_curr < b_curr
+    @staticmethod
+    def crossunder(a, b):
+        a = _to_list(a)
+        b = _to_list(b)
+        if len(a) < 2 or len(b) < 2: return False
+        a_prev = a[-2] if a[-2] is not None else 0.0
+        a_curr = a[-1] if a[-1] is not None else 0.0
+        b_prev = b[-2] if b[-2] is not None else 0.0
+        b_curr = b[-1] if b[-1] is not None else 0.0
+        return a_prev > b_prev and a_curr < b_curr
 
-def ta_highest(source, length):
-    if len(source) < length: return max(source) if source else 0
-    return max(source[-length:])
+    @staticmethod
+    def highest(source, length):
+        data = _to_list(source)
+        if len(data) < length: return max(data) if data else 0
+        return max(data[-length:])
 
-def ta_lowest(source, length):
-    if len(source) < length: return min(source) if source else 0
-    return min(source[-length:])
+    @staticmethod
+    def lowest(source, length):
+        data = _to_list(source)
+        if len(data) < length: return min(data) if data else 0
+        return min(data[-length:])
 
-def ta_change(source, length):
-    if len(source) < length + 1: return 0
-    a = source[-1] if source[-1] is not None else 0.0
-    b = source[-1-length] if source[-1-length] is not None else 0.0
-    return a - b
+    @staticmethod
+    def change(source, length):
+        data = _to_list(source)
+        if len(data) < length + 1: return 0
+        a = data[-1] if data[-1] is not None else 0.0
+        b = data[-1-length] if data[-1-length] is not None else 0.0
+        return a - b
 
+    @staticmethod
+    def alma(source, length, offset=0.85, sigma=6):
+        data = _to_list(source)
+        n = len(data)
+        result = [None] * n
+        if n < length: return result
+        m = offset * (length - 1)
+        s = length / sigma
+        for i in range(length - 1, n):
+            wsum = 0.0
+            norm = 0.0
+            for j in range(length):
+                w = (j - m) / s
+                w = 2.71828 ** (-w * w / 2.0)
+                v = data[i - length + 1 + j]
+                wsum += w * (v if v is not None else 0.0)
+                norm += w
+            result[i] = wsum / norm if norm != 0 else 0.0
+        return result
+
+    @staticmethod
+    def vwap():
+        h = _to_list(high)
+        l = _to_list(low)
+        c = _to_list(close)
+        v = _to_list(volume)
+        n = len(h)
+        result = [None] * n
+        cum_pv = 0.0
+        cum_v = 0.0
+        for i in range(n):
+            if h[i] is not None and l[i] is not None and c[i] is not None and v[i] is not None:
+                tp = (h[i] + l[i] + c[i]) / 3.0
+                cum_pv += tp * v[i]
+                cum_v += v[i]
+            result[i] = cum_pv / cum_v if cum_v > 0 else None
+        return result
+
+# ===== State Variables =====
+try:
+    bar_index = len(_close_data) - 1
+except:
+    bar_index = 0
+
+class barstate:
+    isrealtime = False
+    isconfirmed = True
+
+class syminfo:
+    tickerid = ""
+
+class timeframe:
+    period = ""
+
+# ===== Standalone Helpers =====
 def nz(value, fallback=0.0):
     return value if value is not None else fallback
 
 def iff(condition, a, b):
     return a if condition else b
+
+def security(symbol, tf, expression):
+    return expression
+
+# ===== Backward Compat Standalone Functions (kept for indicator sandbox) =====
+def ta_sma(source, period):
+    return ta.sma(source, period)
+
+def ta_ema(source, period):
+    return ta.ema(source, period)
+
+def ta_rsi(source, period):
+    return ta.rsi(source, period)
+
+def ta_macd(source, fast, slow, signal):
+    return ta.macd(source, fast, slow, signal)
+
+def ta_bb(source, period, stddev):
+    return ta.bb(source, period, stddev)
+
+def ta_atr(candles, period):
+    try:
+        h = _to_list(high)
+        l = _to_list(low)
+        c = _to_list(close)
+    except:
+        try:
+            h = [d["high"] for d in candles]
+            l = [d["low"] for d in candles]
+            c = [d["close"] for d in candles]
+        except:
+            return [None] * len(candles)
+    n = len(h)
+    result = [None] * n
+    if n < period + 1: return result
+    tr_values = []
+    for i in range(1, n):
+        hl = h[i] - l[i]
+        hc = abs(h[i] - c[i-1])
+        lc = abs(l[i] - c[i-1])
+        tr_values.append(max(hl, hc, lc))
+    atr_val = sum(tr_values[:period]) / period
+    result[period] = atr_val
+    for i in range(period + 1, n):
+        atr_val = (atr_val * (period - 1) + tr_values[i-1]) / period
+        result[i] = atr_val
+    return result
+
+def ta_stoch(candles, k_period, k_smoothing, d_period):
+    try:
+        h = _to_list(high)
+        l = _to_list(low)
+        c = _to_list(close)
+    except:
+        h = [d["high"] for d in candles]
+        l = [d["low"] for d in candles]
+        c = [d["close"] for d in candles]
+    return ta.stoch(h, l, c, k_period, k_smoothing, d_period)
+
+def ta_crossover(a, b):
+    return ta.crossover(a, b)
+
+def ta_crossunder(a, b):
+    return ta.crossunder(a, b)
+
+def ta_highest(source, length):
+    return ta.highest(source, length)
+
+def ta_lowest(source, length):
+    return ta.lowest(source, length)
+
+def ta_change(source, length):
+    return ta.change(source, length)
 "#;
 
 #[derive(Debug, Deserialize)]
@@ -229,9 +395,54 @@ pub fn evaluate_indicator(script: &str, candles: &[serde_json::Value]) -> Result
             .collect();
         globals.set_item("_close_data", PyList::new(py, &close_prices)).map_err(|e| e.to_string())?;
 
+        let open_prices: Vec<f64> = candles.iter()
+            .filter_map(|c| c.get("open").and_then(|v| v.as_f64()))
+            .collect();
+        globals.set_item("_open_data", PyList::new(py, &open_prices)).map_err(|e| e.to_string())?;
+
+        let high_prices: Vec<f64> = candles.iter()
+            .filter_map(|c| c.get("high").and_then(|v| v.as_f64()))
+            .collect();
+        globals.set_item("_high_data", PyList::new(py, &high_prices)).map_err(|e| e.to_string())?;
+
+        let low_prices: Vec<f64> = candles.iter()
+            .filter_map(|c| c.get("low").and_then(|v| v.as_f64()))
+            .collect();
+        globals.set_item("_low_data", PyList::new(py, &low_prices)).map_err(|e| e.to_string())?;
+
+        let volume_data: Vec<f64> = candles.iter()
+            .filter_map(|c| c.get("volume").and_then(|v| v.as_f64()))
+            .collect();
+        globals.set_item("_volume_data", PyList::new(py, &volume_data)).map_err(|e| e.to_string())?;
+
+        let first = candles.first();
+        let symbol = first.and_then(|c| c.get("symbol")).and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
+        globals.set_item("_ta_symbol", symbol).map_err(|e| e.to_string())?;
+
         let wrapped = format!(
             r#"
 {ta_lib}
+
+class Series:
+    def __init__(self, data):
+        self._data = data
+    def __getitem__(self, offset):
+        if isinstance(offset, int) and offset < len(self._data):
+            return self._data[len(self._data) - 1 - offset]
+        return None
+    def __float__(self):
+        return self._data[-1] if self._data else 0.0
+
+try:
+    open = Series(_open_data)
+    high = Series(_high_data)
+    low = Series(_low_data)
+    close = Series(_close_data)
+    volume = Series(_volume_data)
+except:
+    pass
+
+syminfo.tickerid = _ta_symbol
 
 _result_plots = []
 _result_hlines = []

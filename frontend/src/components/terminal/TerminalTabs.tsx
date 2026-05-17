@@ -14,12 +14,15 @@ interface TerminalTabsProps {
   onDeployStrategy: (symbol: string, code: string) => Promise<void>;
   onRemoveStrategy: (symbol: string) => Promise<void>;
   onStrategyCodeChange: (code: string) => void;
+  onSaveStrategy?: (name: string, code: string) => Promise<void>;
+  onLoadStrategy?: () => void;
   focusTab?: 'positions' | 'history' | 'strategy' | 'logs';
 }
 
 export const TerminalTabs: React.FC<TerminalTabsProps> = ({
   positions, history, activeSymbol, strategyCode, strategyActive,
-  onClosePosition, onUpdatePosition, onDeployStrategy, onRemoveStrategy, onStrategyCodeChange, focusTab
+  onClosePosition, onUpdatePosition, onDeployStrategy, onRemoveStrategy, onStrategyCodeChange,
+  onSaveStrategy, onLoadStrategy, focusTab
 }) => {
   const [activeTab, setActiveTab] = useState<'positions' | 'history' | 'strategy' | 'logs'>('positions');
 
@@ -225,6 +228,8 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
             onCodeChange={onStrategyCodeChange}
             onDeploy={onDeployStrategy}
             onRemove={onRemoveStrategy}
+            onSave={onSaveStrategy}
+            onLoad={onLoadStrategy}
           />
         )}
       </div>

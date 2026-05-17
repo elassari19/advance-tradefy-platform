@@ -231,58 +231,60 @@
 
 ### Backend — Python TA Function Library
 
-- `[ ]` Implement and inject `ta.sma(source, length)` into Python globals
-- `[ ]` Implement and inject `ta.ema(source, length)` into Python globals
-- `[ ]` Implement and inject `ta.rsi(source, length)` into Python globals
-- `[ ]` Implement and inject `ta.macd(source, fast, slow, signal)` into Python globals
-- `[ ]` Implement and inject `ta.bb(source, length, std)` into Python globals
-- `[ ]` Implement and inject `ta.atr(length)` into Python globals
-- `[ ]` Implement and inject `ta.stoch(high, low, close, k, d)` into Python globals
-- `[ ]` Implement and inject `ta.crossover(a, b)` / `ta.crossunder(a, b)` into Python globals
-- `[ ]` Implement and inject `ta.highest(source, length)` / `ta.lowest(source, length)` into Python globals
-- `[ ]` Implement and inject `ta.change(source, length)` into Python globals
-- `[ ]` Implement and inject `ta.alma(source, length, offset, sigma)` into Python globals
-- `[ ]` Implement and inject `ta.vwap()` into Python globals
-- `[ ]` Implement and inject `nz(value, fallback)` into Python globals
-- `[ ]` Implement and inject `iff(condition, a, b)` into Python globals
-- `[ ]` Implement and inject `security(symbol, timeframe, expression)` into Python globals
-- `[ ]` Implement and inject `timeframe.period`, `syminfo.tickerid` into Python globals
-- `[ ]` Implement and inject `bar_index`, `barstate.isrealtime`, `barstate.isconfirmed` into Python globals
+- `[x]` Implement and inject `ta.sma(source, length)` into Python globals
+- `[x]` Implement and inject `ta.ema(source, length)` into Python globals
+- `[x]` Implement and inject `ta.rsi(source, length)` into Python globals
+- `[x]` Implement and inject `ta.macd(source, fast, slow, signal)` into Python globals
+- `[x]` Implement and inject `ta.bb(source, length, std)` into Python globals
+- `[x]` Implement and inject `ta.atr(length)` into Python globals
+- `[x]` Implement and inject `ta.stoch(high, low, close, k, d)` into Python globals
+- `[x]` Implement and inject `ta.crossover(a, b)` / `ta.crossunder(a, b)` into Python globals
+- `[x]` Implement and inject `ta.highest(source, length)` / `ta.lowest(source, length)` into Python globals
+- `[x]` Implement and inject `ta.change(source, length)` into Python globals
+- `[x]` Implement and inject `ta.alma(source, length, offset, sigma)` into Python globals
+- `[x]` Implement and inject `ta.vwap()` into Python globals
+- `[x]` Implement and inject `nz(value, fallback)` into Python globals
+- `[x]` Implement and inject `iff(condition, a, b)` into Python globals
+- `[x]` Implement and inject `security(symbol, timeframe, expression)` into Python globals
+- `[x]` Implement and inject `timeframe.period`, `syminfo.tickerid` into Python globals
+- `[x]` Implement and inject `bar_index`, `barstate.isrealtime`, `barstate.isconfirmed` into Python globals
 
 ### Backend — Python Plot/BG/Shape Functions
 
-- `[ ]` Implement and inject `plot(series, title, color, style, width)` into Python globals
-- `[ ]` Implement and inject `plotshape(series, title, location, style, size)` into Python globals
-- `[ ]` Implement and inject `plotarrow(series, colorup, colordown)` into Python globals
-- `[ ]` Implement and inject `hline(price, title, color, linestyle)` into Python globals
-- `[ ]` Implement and inject `bgcolor(color)` into Python globals
-- `[ ]` Implement and inject `fill(series1, series2, color)` into Python globals
-- `[ ]` Return plot data alongside signals from `PythonRuntime`
+- `[x]` Implement and inject `plot(series, title, color, style, width)` into Python globals
+- `[x]` Implement and inject `plotshape(series, title, location, style, size)` into Python globals
+- `[x]` Implement and inject `plotarrow(series, colorup, colordown)` into Python globals
+- `[x]` Implement and inject `hline(price, title, color, linestyle)` into Python globals
+- `[x]` Implement and inject `bgcolor(color)` into Python globals
+- `[x]` Implement and inject `fill(series1, series2, color)` into Python globals
+- `[x]` Return plot data alongside signals from `PythonRuntime`
 
 ### Backend — Strategy DSL Decorator
 
-- `[ ]` Implement `@strategy` decorator injection (title, overlay, initial_capital, etc.)
-- `[ ]` Parse decorator parameters in `PythonRuntime`
-- `[ ]` Implement `strategy.entry(id, direction, qty, limit, stop)` in Python
-- `[ ]` Implement `strategy.exit(id, from_entry, qty, limit, stop)` in Python
-- `[ ]` Implement `strategy.close(id, qty)` in Python
-- `[ ]` Implement `strategy.order(id, direction, qty, limit, stop)` in Python
-- `[ ]` Implement `strategy.position_size`, `strategy.position_avg_price`, `strategy.equity`
-- `[ ]` Implement `input(default, title)` for strategy parameters
+- `[x]` Implement `@strategy` decorator injection (title, overlay, initial_capital, etc.)
+- `[x]` Parse decorator parameters in `PythonRuntime`
+- `[x]` Implement `strategy.entry(id, direction, qty, limit, stop)` in Python
+
+### Backend — Strategy Optimization
+- `[x]` Implement `strategy.exit(id, from_entry, qty, limit, stop)` in Python
+- `[x]` Implement `strategy.close(id, qty)` in Python
+- `[x]` Implement `strategy.order(id, direction, qty, limit, stop)` in Python
+- `[x]` Implement `strategy.position_size`, `strategy.position_avg_price`, `strategy.equity`
+- `[x]` Implement `input(default, title)` for strategy parameters
 
 ### Backend — Strategy Optimization
 
-- `[ ]` Implement `ParameterRange` struct
-- `[ ]` Implement `run_optimization(code, symbol, timeframe, ranges) -> Vec<OptimizationResult>`
-- `[ ]` Cartesian product parameter grid search
-- `[ ]` Sort results by Sharpe ratio / net profit
-- `[ ]` Implement `POST /api/backtest/optimize` endpoint
+- `[x]` Implement `ParameterRange` struct
+- `[x]` Implement `run_optimization(code, symbol, timeframe, ranges) -> Vec<OptimizationResult>`
+- `[x]` Cartesian product parameter grid search
+- `[x]` Sort results by Sharpe ratio / net profit
+- `[x]` Implement `POST /api/backtest/optimize` endpoint
 
 ### Backend — Strategy Library
 
-- `[ ]` Create `saved_strategies` table (migration)
-- `[ ]` Implement `POST /api/strategy/save` endpoint
-- `[ ]` Implement `GET /api/strategy/list` endpoint
+- `[x]` Create `saved_strategies` table (migration)
+- `[x]` Implement `POST /api/strategy/save` endpoint
+- `[x]` Implement `GET /api/strategy/list` endpoint
 
 ### Frontend — JavaScript Strategy Runner
 
@@ -294,23 +296,23 @@
 
 ### Frontend — Optimization UI
 
-- `[ ]` Create `OptimizationPanel.tsx` component
-- `[ ]` Parameter range inputs (name, min, max, step)
-- `[ ]` [Run Optimization] button → `POST /api/backtest/optimize`
-- `[ ]] Results table sorted by Sharpe (parameter set + metrics per row)
-- `[ ]` [Apply Best] button → copies best parameters to strategy editor
+- `[x]` Create `OptimizationPanel.tsx` component
+- `[x]` Parameter range inputs (name, min, max, step)
+- `[x]` [Run Optimization] button → `POST /api/backtest/optimize`
+- `[x]` Results table sorted by Sharpe (parameter set + metrics per row)
+- `[x]` [Apply Best] button → copies best parameters to strategy editor
 
 ### Frontend — Strategy Library UI
 
-- `[ ]` Create strategy browser (list saved strategies)
-- `[ ]` Load strategy into editor on click
-- `[ ]` Save current editor code as named strategy
+- `[x]` Create strategy browser (list saved strategies)
+- `[x]` Load strategy into editor on click
+- `[x]` Save current editor code as named strategy
 - `[ ]` Delete saved strategies
 
 ### Frontend — Advanced Editor Features
 
 - `[ ]` Syntax highlighting for Tradify DSL functions
-- `[ ]` Autocomplete for built-in functions (ta.*, plot*, strategy.*)
+- `[x]` Autocomplete for built-in functions (ta.*, plot*, strategy.*)
 - `[ ]` Inline documentation tooltips on hover
 - `[ ]` Plot output preview pane (mini chart of strategy plots)
 
