@@ -2,6 +2,7 @@ mod ai;
 mod backtest;
 mod candle_aggregator;
 mod indicator;
+mod indicators;
 mod time_series;
 mod models;
 mod python_runtime;
@@ -16,6 +17,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use indicators::{EvaluateBatchRequest, EvaluateBatchResponse};
 use backtest::BacktestEngine;
 use candle_aggregator::CandleAggregator;
 use futures_util::{SinkExt, StreamExt};
@@ -156,6 +158,8 @@ async fn main() {
         .route("/api/webhooks", get(get_webhooks).post(update_webhooks))
         .route("/api/history", get(get_history))
         .route("/api/indicator/evaluate", post(evaluate_indicator_handler))
+        .route("/api/indicators/evaluate-batch", post(evaluate_indicators_batch))
+        .route("/api/indicators/list", get(list_indicators))
         .route("/api/backtest/run", post(run_backtest))
         .route("/api/backtest/save", post(save_backtest))
         .route("/api/backtest/list", get(list_backtests))
@@ -463,6 +467,33 @@ async fn evaluate_indicator_handler(
         Ok(resp) => Ok(Json(resp)),
         Err(e) => Err((axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e })))),
     }
+}
+
+async fn evaluate_indicators_batch(
+    Json(payload): Json<EvaluateBatchRequest>,
+) -> Result<Json<EvaluateBatchResponse>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let mut results = Vec::with_capacity(payload.indicators.len());
+
+    for req in &payload.indicators {
+        match indicators::get_indicator(&req.indicator_type, &req.params, req.color.as_deref()) {
+            Some(indicator) => {
+                let output = indicator.calculate(&payload.candles);
+                results.push(output);
+            }
+            None => {
+                return Err((
+                    axum::http::StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": format!("Unknown indicator type: {}", req.indicator_type) })),
+                ));
+            }
+        }
+    }
+
+    Ok(Json(EvaluateBatchResponse { results }))
+}
+
+async fn list_indicators() -> Json<Vec<serde_json::Value>> {
+    Json(indicators::list_available_indicators())
 }
 
 async fn run_backtest(

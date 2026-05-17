@@ -110,26 +110,26 @@
 
 ### Backend — Rust Native Indicators
 
-- `[ ]` Create `backend/src/indicators/` directory
-- `[ ]` Create `backend/src/indicators/mod.rs` with `Indicator` trait + registry
-- `[ ]` Implement `Indicator` trait (name, calculate, parameters)
-- `[ ]` Implement `IndicatorOutput`, `IndicatorPlot`, `IndicatorLine` types
-- `[ ]` Create `backend/src/indicators/sma.rs` — Simple Moving Average
-- `[ ]` Create `backend/src/indicators/ema.rs` — Exponential Moving Average
-- `[ ]` Create `backend/src/indicators/rsi.rs` — Relative Strength Index
-- `[ ]` Create `backend/src/indicators/macd.rs` — MACD + Signal + Histogram
-- `[ ]` Create `backend/src/indicators/bollinger.rs` — Bollinger Bands
-- `[ ]` Create `backend/src/indicators/atr.rs` — Average True Range
-- `[ ]` Create `backend/src/indicators/stochastic.rs` — Stochastic Oscillator
-- `[ ]` Create `backend/src/indicators/vwap.rs` — Volume-Weighted Average Price
+- `[x]` Create `backend/src/indicators/` directory
+- `[x]` Create `backend/src/indicators/mod.rs` with `Indicator` trait + registry
+- `[x]` Implement `Indicator` trait (name, calculate, parameters)
+- `[x]` Implement `IndicatorOutput`, `IndicatorPlot`, `IndicatorLine` types
+- `[x]` Create `backend/src/indicators/sma.rs` — Simple Moving Average
+- `[x]` Create `backend/src/indicators/ema.rs` — Exponential Moving Average
+- `[x]` Create `backend/src/indicators/rsi.rs` — Relative Strength Index
+- `[x]` Create `backend/src/indicators/macd.rs` — MACD + Signal + Histogram
+- `[x]` Create `backend/src/indicators/bollinger.rs` — Bollinger Bands
+- `[x]` Create `backend/src/indicators/atr.rs` — Average True Range
+- `[x]` Create `backend/src/indicators/stochastic.rs` — Stochastic Oscillator
+- `[x]` Create `backend/src/indicators/vwap.rs` — Volume-Weighted Average Price
 
 ### Backend — Indicator Pipeline
 
 - `[ ]` Implement `IndicatorPipeline` struct (list of indicators, pane assignment)
 - `[ ]` Implement `IndicatorPipeline::evaluate_all(candles) -> Vec<IndicatorOutput>`
-- `[ ]` Create `POST /api/indicators/evaluate-batch` endpoint
-- `[ ]` Create `IndicatorParam` serialization for JSON API
-- `[ ]` Create `GET /api/indicators/list` endpoint (returns available indicators + their params)
+- `[x]` Create `POST /api/indicators/evaluate-batch` endpoint
+- `[x]` Create `IndicatorParam` serialization for JSON API
+- `[x]` Create `GET /api/indicators/list` endpoint (returns available indicators + their params)
 - `[ ]` Implement multi-timeframe resolution (`request.security()`)
 - `[ ]` Wire MTF into `CandleAggregator` map lookup
 
