@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FlaskConical, X, Plus, ChevronDown, BarChart3 } from "lucide-react";
+import { X, Plus, ChevronDown, BarChart3, FlaskConical } from "lucide-react";
 import { useMarketDataForSymbol } from "./hooks/useMarketData";
 import { useSimulator } from "./hooks/useSimulator";
+import { useBacktest } from "./hooks/useBacktest";
 import { Chart } from "./components/Chart";
 import { OrderPanel } from "./components/order/OrderPanel";
 import { TerminalTabs } from "./components/terminal/TerminalTabs";
@@ -12,8 +13,11 @@ import { TimeframeModal } from "./components/settings/TimeframeModal";
 import { AIChat } from "./components/chat/AIChat";
 import { IndicatorsModal } from "./components/IndicatorsModal";
 import { CustomIndicatorModal } from "./components/CustomIndicatorModal";
+import { BacktestConfig } from "./components/backtest/BacktestConfig";
+import { BacktestResults } from "./components/backtest/BacktestResults";
 import type { WebhookConfig } from "./hooks/useSimulator";
 import type { IndicatorConfig, CustomIndicatorDef } from "./utils/indicators";
+import type { BacktestResult, BacktestRequest } from "./hooks/useBacktest";
 
 type View = 'trade' | 'backtest' | 'script';
 type ChartType = 'area' | 'line' | 'candle';
@@ -53,7 +57,10 @@ export function App() {
   const [showIndicatorsModal, setShowIndicatorsModal] = useState(false);
   const [focusTab, setFocusTab] = useState<'positions' | 'history' | 'strategy' | 'logs' | undefined>(undefined);
 
+  const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
+
   const { state: simState, placeOrder, updatePosition, closePosition, deployStrategy, removeStrategy, fetchActiveStrategies, saveWebhooks, fetchWebhooks } = useSimulator();
+  const { runBacktest, saveBacktest, running: backtestRunning } = useBacktest();
 
   useEffect(() => {
     fetchWebhooks().then(setWebhooks).catch(console.error);
@@ -90,6 +97,21 @@ export function App() {
       return { ...prev, [activeSymbol]: [...current, config] };
     });
   }, [activeSymbol]);
+
+  const handleBacktestRun = useCallback(async (req: BacktestRequest) => {
+    const result = await runBacktest(req);
+    if (result) {
+      setBacktestResult(result);
+    }
+  }, [runBacktest]);
+
+  const handleBacktestSave = useCallback(async () => {
+    if (!backtestResult) return;
+    const id = await saveBacktest(backtestResult, backtestResult.request.strategy_code.slice(0, 30) + '...');
+    if (id) {
+      alert(`Backtest saved with ID: ${id}`);
+    }
+  }, [backtestResult, saveBacktest]);
 
   const handleRemoveIndicator = useCallback((id: string) => {
     setIndicatorConfigs(prev => {
@@ -293,13 +315,35 @@ export function App() {
       )}
 
       {view === 'backtest' && (
-        <div className="h-[calc(100vh-64px)] flex flex-col items-center justify-center text-center p-8">
-          <FlaskConical size={64} className="text-zinc-600 mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-2">Backtest</h2>
-          <p className="text-zinc-400 max-w-md">
-            Run historical simulations to validate your trading strategies.
-            Configure your strategy and test it against past market data.
-          </p>
+        <div className="h-[calc(100vh-64px)] grid grid-cols-[360px_1fr] overflow-hidden">
+          <div className="overflow-y-auto border-r border-zinc-800 p-4 space-y-4">
+            <BacktestConfig
+              strategyCode={currentStrategyCode}
+              onRun={handleBacktestRun}
+              running={backtestRunning}
+            />
+            {backtestResult && (
+              <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Strategy</h3>
+                <pre className="text-[10px] text-zinc-400 font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
+                  {currentStrategyCode}
+                </pre>
+              </div>
+            )}
+          </div>
+          <div className="overflow-y-auto p-4">
+            {backtestResult ? (
+              <BacktestResults result={backtestResult} onSave={handleBacktestSave} />
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-center p-8">
+                <FlaskConical size={64} className="text-zinc-600 mb-4" />
+                <h2 className="text-xl font-bold text-white mb-2">Backtest</h2>
+                <p className="text-zinc-400 max-w-md text-sm">
+                  Configure your backtest settings on the left and click <span className="text-blue-400 font-bold">Run Backtest</span> to simulate your strategy against historical market data.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
