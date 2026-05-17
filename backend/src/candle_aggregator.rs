@@ -3,6 +3,7 @@ use crate::models::{Candle, Tick};
 
 const MAX_COMPLETED_CANDLES: usize = 500;
 
+#[derive(Clone)]
 pub struct CandleAggregator {
     pub timeframe: u32,
     pub current: Option<Candle>,

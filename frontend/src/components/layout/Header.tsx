@@ -1,15 +1,16 @@
-import { LineChart, Settings } from "lucide-react";
+import { LineChart, Settings, Bell } from "lucide-react";
 import type { SimulatorState } from "../../hooks/useSimulator";
 
 interface HeaderProps {
-  view: 'trade' | 'backtest' | 'script';
-  onViewChange: (view: 'trade' | 'backtest' | 'script') => void;
+  view: 'trade' | 'backtest' | 'script' | 'alerts';
+  onViewChange: (view: 'trade' | 'backtest' | 'script' | 'alerts') => void;
   simState: SimulatorState;
   isConnected: boolean;
   onOpenSettings: () => void;
+  alertCount?: number;
 }
 
-export function Header({ view, onViewChange, simState, isConnected, onOpenSettings }: HeaderProps) {
+export function Header({ view, onViewChange, simState, isConnected, onOpenSettings, alertCount }: HeaderProps) {
   return (
     <header className="col-span-3 border-b border-zinc-800 flex items-center justify-between px-6 bg-[#09090b] z-10">
       <div className="flex items-center gap-8">
@@ -53,6 +54,22 @@ export function Header({ view, onViewChange, simState, isConnected, onOpenSettin
             }`}
           >
             Pen Script
+          </button>
+          <button
+            onClick={() => onViewChange('alerts')}
+            className={`relative flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+              view === 'alerts'
+                ? 'bg-blue-600 text-white'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+            }`}
+          >
+            <Bell size={16} />
+            Alerts
+            {alertCount !== undefined && alertCount > 0 && (
+              <span className="ml-1 w-4 h-4 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center">
+                {alertCount}
+              </span>
+            )}
           </button>
         </nav>
       </div>

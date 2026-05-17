@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { X, Plus, ChevronDown, BarChart3, FlaskConical } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { X, Plus, ChevronDown, BarChart3, FlaskConical, Bell } from "lucide-react";
 import { useMarketDataForSymbol } from "./hooks/useMarketData";
 import { useSimulator } from "./hooks/useSimulator";
 import { useBacktest } from "./hooks/useBacktest";
@@ -15,11 +15,14 @@ import { IndicatorPanel } from "./components/indicators/IndicatorPanel";
 import { CustomIndicatorModal } from "./components/CustomIndicatorModal";
 import { BacktestConfig } from "./components/backtest/BacktestConfig";
 import { BacktestResults } from "./components/backtest/BacktestResults";
+import { AlertCreator } from "./components/alerts/AlertCreator";
+import { AlertsList } from "./components/alerts/AlertsList";
 import type { WebhookConfig } from "./hooks/useSimulator";
 import type { IndicatorConfig, CustomIndicatorDef } from "./utils/indicators";
 import type { BacktestResult, BacktestRequest } from "./hooks/useBacktest";
+import type { AlertRule, TriggeredAlert, WebhookLog } from "./hooks/useSimulator";
 
-type View = 'trade' | 'backtest' | 'script';
+type View = 'trade' | 'backtest' | 'script' | 'alerts';
 type ChartType = 'area' | 'line' | 'candle';
 
 const DEFAULT_STRATEGY_CODE = '# Write your strategy here...\n\ndef on_tick(price, candles):\n    pass';
@@ -59,13 +62,86 @@ export function App() {
 
   const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
 
-  const { state: simState, placeOrder, updatePosition, closePosition, deployStrategy, removeStrategy, fetchActiveStrategies, saveWebhooks, fetchWebhooks } = useSimulator();
+  // ── Alert State ──
+  const [alerts, setAlerts] = useState<AlertRule[]>([]);
+  const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
+  const [showAlertCreator, setShowAlertCreator] = useState(false);
+  const [editingAlert, setEditingAlert] = useState<AlertRule | null>(null);
+  const [notificationSent, setNotificationSent] = useState<Set<string>>(new Set());
+  const alertWsRef = useRef<WebSocket | null>(null);
+
+  const { state: simState, placeOrder, updatePosition, closePosition, deployStrategy, removeStrategy, fetchActiveStrategies, saveWebhooks, fetchWebhooks, fetchAlerts, saveAlert, deleteAlert, fetchWebhookLogs } = useSimulator();
   const { runBacktest, saveBacktest, running: backtestRunning } = useBacktest();
 
   useEffect(() => {
     fetchWebhooks().then(setWebhooks).catch(console.error);
     fetchActiveStrategies().then(setActiveStrategySymbols).catch(console.error);
   }, [fetchWebhooks, fetchActiveStrategies]);
+
+  // ── Fetch alerts on mount ──
+  useEffect(() => {
+    fetchAlerts().then(setAlerts).catch(console.error);
+    fetchWebhookLogs().then(setWebhookLogs).catch(console.error);
+  }, [fetchAlerts, fetchWebhookLogs]);
+
+  // ── Alert WebSocket for browser notifications ──
+  useEffect(() => {
+    function connectAlertWs() {
+      const ws = new WebSocket('ws://127.0.0.1:3000/ws/alerts');
+      ws.onmessage = (event) => {
+        try {
+          const data: TriggeredAlert = JSON.parse(event.data);
+          
+          // Browser Notification
+          if ('Notification' in window && Notification.permission === 'granted') {
+            if (!notificationSent.has(data.rule_id + data.timestamp)) {
+              new Notification(`Alert: ${data.rule_name}`, {
+                body: data.message,
+                icon: '/vite.svg',
+              });
+              setNotificationSent(prev => new Set(prev).add(data.rule_id + data.timestamp));
+
+              // Play alert sound
+              try {
+                const audioCtx = new AudioContext();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.frequency.value = 880;
+                gain.gain.value = 0.3;
+                osc.start();
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+                osc.stop(audioCtx.currentTime + 0.5);
+              } catch {}
+            }
+          }
+        } catch {}
+      };
+      ws.onclose = () => {
+        setTimeout(connectAlertWs, 3000);
+      };
+      alertWsRef.current = ws;
+    }
+
+    if (view === 'trade' || view === 'alerts') {
+      connectAlertWs();
+    }
+
+    return () => {
+      if (alertWsRef.current) {
+        alertWsRef.current.close();
+        alertWsRef.current = null;
+      }
+    };
+  }, [view, notificationSent]);
+
+  // ── Request notification permission ──
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
 
   const currentStrategyCode = strategyCodes[activeSymbol] ?? DEFAULT_STRATEGY_CODE;
   const currentStrategyActive = activeStrategySymbols.includes(activeSymbol.replace('/', ''));
@@ -178,6 +254,37 @@ export function App() {
     setWebhooks(newWebhooks);
   };
 
+  // ── Alert Handlers ──
+
+  const handleAddAlert = useCallback(() => {
+    setEditingAlert(null);
+    setShowAlertCreator(true);
+  }, []);
+
+  const handleEditAlert = useCallback((alert: AlertRule) => {
+    setEditingAlert(alert);
+    setShowAlertCreator(true);
+  }, []);
+
+  const handleSaveAlert = useCallback(async (alert: Partial<AlertRule>) => {
+    const ok = await saveAlert(alert);
+    if (ok) {
+      const updated = await fetchAlerts();
+      setAlerts(updated);
+    }
+  }, [saveAlert, fetchAlerts]);
+
+  const handleDeleteAlert = useCallback(async (id: string) => {
+    const ok = await deleteAlert(id);
+    if (ok) {
+      setAlerts(prev => prev.filter(a => a.id !== id));
+    }
+  }, [deleteAlert]);
+
+  const handleToggleAlert = useCallback(async (alert: AlertRule) => {
+    await handleSaveAlert({ ...alert, enabled: !alert.enabled });
+  }, [handleSaveAlert]);
+
   const chartTypeOptions = [
     { value: 'area', label: 'Area' },
     { value: 'line', label: 'Line' },
@@ -192,6 +299,7 @@ export function App() {
         simState={simState}
         isConnected={true}
         onOpenSettings={() => setShowSettings(true)}
+        alertCount={alerts.length}
       />
 
       {view === 'trade' && (
@@ -354,6 +462,26 @@ export function App() {
           onApplyCode={handleApplyCode}
         />
       )}
+
+      {view === 'alerts' && (
+        <div className="h-[calc(100vh-64px)]">
+          <AlertsList
+            alerts={alerts}
+            webhookLogs={webhookLogs}
+            onAdd={handleAddAlert}
+            onEdit={handleEditAlert}
+            onDelete={handleDeleteAlert}
+            onToggle={handleToggleAlert}
+          />
+        </div>
+      )}
+
+      <AlertCreator
+        isOpen={showAlertCreator}
+        onClose={() => setShowAlertCreator(false)}
+        onSave={handleSaveAlert}
+        editAlert={editingAlert}
+      />
 
       <WebhookSettings
         isOpen={showSettings}

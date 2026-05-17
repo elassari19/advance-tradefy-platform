@@ -1,4 +1,5 @@
 mod ai;
+mod alerts;
 mod backtest;
 mod candle_aggregator;
 mod indicator;
@@ -11,6 +12,7 @@ mod strategy;
 mod webhooks;
 
 use ai::AIClient;
+use alerts::AlertEngine;
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, Query, State},
     response::IntoResponse,
@@ -21,7 +23,7 @@ use indicators::{EvaluateBatchRequest, EvaluateBatchResponse, IndicatorPipeline,
 use backtest::BacktestEngine;
 use candle_aggregator::CandleAggregator;
 use futures_util::{SinkExt, StreamExt};
-use models::{AIChatRequest, BacktestRequest, BinanceTicker, Candle, HistoryParams, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle};
+use models::{AIChatRequest, AlertRule, BacktestRequest, BinanceTicker, Candle, HistoryParams, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle, TriggeredAlert};
 use simulator::SimulatorEngine;
 use strategy::StrategyEngine;
 use serde::{Deserialize, Serialize};
@@ -31,8 +33,6 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc};
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct CustomIndicatorDef {
@@ -46,11 +46,14 @@ struct CustomIndicatorDef {
 struct AppState {
     tx: broadcast::Sender<Tick>,
     candle_tx: broadcast::Sender<Candle>,
+    alert_tx: broadcast::Sender<TriggeredAlert>,
     simulator: Arc<SimulatorEngine>,
     strategy: StrategyEngine,
     last_tick: Mutex<Option<Tick>>,
     webhook_configs: Mutex<Vec<WebhookConfig>>,
+    webhook_logger: webhooks::WebhookLogger,
     aggregators: Arc<Mutex<HashMap<(String, u32), CandleAggregator>>>,
+    alert_engine: AlertEngine,
     ai_client: AIClient,
     db: Option<sqlx::PgPool>,
     custom_indicators: Mutex<Vec<CustomIndicatorDef>>,
@@ -58,11 +61,10 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
-    // Load .env file from current directory
     let env_path = std::env::current_dir()
         .map(|p| p.join(".env"))
         .unwrap_or_default();
-    
+
     if env_path.exists() {
         dotenvy::from_path(&env_path).ok();
         tracing::info!("Loaded .env from {:?}", env_path);
@@ -70,11 +72,8 @@ async fn main() {
         dotenvy::dotenv().ok();
     }
 
-    // Initialize tracing with filtering
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| {
-            tracing_subscriber::EnvFilter::new("info")
-        })
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
         .add_directive("tokio_tungstenite=warn".parse().unwrap())
         .add_directive("tungstenite=warn".parse().unwrap());
 
@@ -83,26 +82,29 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer().with_target(false))
         .init();
 
-    // Set up broadcast channels
     let (tx, _rx) = broadcast::channel(100);
     let (candle_tx, _candle_rx) = broadcast::channel(100);
-    let simulator = Arc::new(SimulatorEngine::new(10000.0)); // Initial $10k balance
+    let (alert_tx, _alert_rx) = broadcast::channel(100);
+    let simulator = Arc::new(SimulatorEngine::new(10000.0));
     let strategy = StrategyEngine::new(simulator.clone());
-    
-    // Initialize AI client
+
     let openrouter_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_else(|_| "NOT_FOUND".to_string());
     let google_key = std::env::var("AI_API_KEY").unwrap_or_else(|_| "NOT_FOUND".to_string());
-    
+
     tracing::info!("OpenRouter key: {}", if openrouter_key.len() > 20 { "SET ({} chars)".to_string() } else { openrouter_key.clone() });
     tracing::info!("Google key: {}", if google_key.len() > 20 { "SET ({} chars)".to_string() } else { google_key.clone() });
     let ai_client = AIClient::new(openrouter_key, google_key);
-    
-    // Initialize database pool
+
     let db = match sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://hicham:password@localhost:5432/tradefy".to_string())).await {
         Ok(pool) => {
             tracing::info!("Connected to PostgreSQL database");
-            // Run migrations
-            for migration in &["migrations/001_create_chat_sessions.sql", "migrations/002_create_chat_messages.sql", "migrations/003_create_backtest_results.sql"] {
+            for migration in &[
+                "migrations/001_create_chat_sessions.sql",
+                "migrations/002_create_chat_messages.sql",
+                "migrations/003_create_backtest_results.sql",
+                "migrations/004_create_alert_rules.sql",
+                "migrations/005_create_webhook_logs.sql",
+            ] {
                 let sql = match tokio::fs::read_to_string(migration).await {
                     Ok(content) => content,
                     Err(_) => continue,
@@ -121,45 +123,45 @@ async fn main() {
         }
     };
 
-    // Pre-create aggregator for default symbol/timeframe
     let mut aggregators_map = HashMap::new();
     aggregators_map.insert(
         ("BTCUSDT".to_string(), 5u32),
         CandleAggregator::new("BTCUSDT", 5),
     );
     let aggregators = Arc::new(Mutex::new(aggregators_map));
-    
-    let app_state = Arc::new(AppState { 
+
+    let app_state = Arc::new(AppState {
         tx: tx.clone(),
         candle_tx: candle_tx.clone(),
+        alert_tx: alert_tx.clone(),
         simulator,
         strategy,
         last_tick: Mutex::new(None),
         webhook_configs: Mutex::new(Vec::new()),
+        webhook_logger: webhooks::WebhookLogger::new(),
         aggregators,
+        alert_engine: AlertEngine::new(),
         ai_client,
         db,
         custom_indicators: Mutex::new(Vec::new()),
     });
 
-    // Spawn Binance stream task
     let state_clone = app_state.clone();
     tokio::spawn(async move {
         start_binance_stream(state_clone).await;
     });
 
-    // CORS
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Build our application
     let app = Router::new()
         .route("/", get(|| async { "Tradefy Backend is Live" }))
         .route("/health", get(|| async { "OK" }))
         .route("/ws/live", get(ws_handler))
         .route("/ws/candles", get(ws_candles_handler))
+        .route("/ws/alerts", get(ws_alerts_handler))
         .route("/api/order", post(place_order))
         .route("/api/position/update", post(update_position))
         .route("/api/position/close", post(close_position))
@@ -168,6 +170,9 @@ async fn main() {
         .route("/api/strategy/remove", post(remove_strategy))
         .route("/api/strategy/active", get(get_active_strategies))
         .route("/api/webhooks", get(get_webhooks).post(update_webhooks))
+        .route("/api/webhooks/logs", get(get_webhook_logs))
+        .route("/api/alerts", get(get_alerts).post(create_alert))
+        .route("/api/alerts/:id", delete(delete_alert))
         .route("/api/history", get(get_history))
         .route("/api/indicator/evaluate", post(evaluate_indicator_handler))
         .route("/api/indicators/evaluate-batch", post(evaluate_indicators_batch))
@@ -184,7 +189,6 @@ async fn main() {
         .layer(cors)
         .with_state(app_state);
 
-    // Run it
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     tracing::info!("listening on {}", addr);
 
@@ -211,16 +215,13 @@ async fn start_binance_stream(state: Arc<AppState>) {
                                     price: binance_tick.price.parse().unwrap_or(0.0),
                                     time: binance_tick.time,
                                 };
-                                
-                                // Update last tick
+
                                 if let Ok(mut last) = state.last_tick.lock() {
                                     *last = Some(tick.clone());
                                 }
 
-                                // Process tick in simulator
                                 state.simulator.process_tick(&tick);
 
-                                // Feed tick into candle aggregators (must be before on_candle)
                                 let completed_candles = {
                                     let mut aggregators = state.aggregators.lock().unwrap();
                                     let mut all_completed = Vec::new();
@@ -231,28 +232,36 @@ async fn start_binance_stream(state: Arc<AppState>) {
                                     all_completed
                                 };
 
-                                // Process candle-based strategy execution
                                 let webhook_configs = {
                                     let c = state.webhook_configs.lock().unwrap();
                                     c.clone()
                                 };
+
                                 if let Some(current_candle) = {
                                     let aggregators = state.aggregators.lock().unwrap();
                                     aggregators.get(&("BTCUSDT".to_string(), 5u32))
                                         .and_then(|agg| agg.get_current_candle().cloned())
                                 } {
                                     state.strategy.on_candle(&current_candle, webhook_configs.clone());
+
+                                    // Evaluate alerts on each candle update
+                                    if let Some(agg) = {
+                                        let aggregators = state.aggregators.lock().unwrap();
+                                        aggregators.get(&("BTCUSDT".to_string(), 5u32)).cloned()
+                                    } {
+                                        let triggered = state.alert_engine.evaluate(&current_candle, &agg);
+                                        for alert in triggered {
+                                            let _ = state.alert_tx.send(alert);
+                                        }
+                                    }
                                 }
 
-                                // Process tick-based strategy execution (backward compat)
                                 state.strategy.on_tick(tick.clone(), webhook_configs);
 
-                                // Broadcast completed candles to frontend
                                 for candle in &completed_candles {
                                     let _ = state.candle_tx.send(candle.clone());
                                 }
-                                
-                                // Broadcast tick to frontend
+
                                 let _ = state.tx.send(tick);
                             }
                         }
@@ -289,6 +298,13 @@ async fn ws_candles_handler(
     ws.on_upgrade(|socket| handle_candle_socket(socket, state))
 }
 
+async fn ws_alerts_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(|socket| handle_alert_socket(socket, state))
+}
+
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     tracing::info!("New frontend WebSocket connection");
     let mut rx = state.tx.subscribe();
@@ -315,6 +331,19 @@ async fn handle_candle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     tracing::info!("Candle WebSocket connection closed");
 }
 
+async fn handle_alert_socket(mut socket: WebSocket, state: Arc<AppState>) {
+    tracing::info!("New alert WebSocket connection");
+    let mut rx = state.alert_tx.subscribe();
+
+    while let Ok(alert) = rx.recv().await {
+        let msg = serde_json::to_string(&alert).unwrap();
+        if socket.send(Message::Text(msg)).await.is_err() {
+            break;
+        }
+    }
+    tracing::info!("Alert WebSocket connection closed");
+}
+
 async fn place_order(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<OrderRequest>,
@@ -326,22 +355,30 @@ async fn place_order(
 
     if let Some(tick) = tick {
         let res = state.simulator.place_order(payload.clone(), tick.price, tick.time);
-        
+
         if let Ok(id) = res {
             let webhook_configs = {
                 let c = state.webhook_configs.lock().unwrap();
                 c.clone()
             };
-            
+
             for config in webhook_configs.iter().filter(|c| c.enabled) {
                 let config_clone = config.clone();
                 let payload_clone = payload.clone();
                 let price = tick.price;
                 tokio::spawn(async move {
-                    webhooks::dispatch_webhook(config_clone.url, config_clone.secret_token, payload_clone, price).await;
+                    let result = webhooks::dispatch_webhook_with_config(&config_clone, &payload_clone, price).await;
+                    match &result {
+                        webhooks::WebhookDeliveryResult::Success(_info) => {
+                            tracing::info!("Webhook dispatched successfully to {}", config_clone.url);
+                        }
+                        webhooks::WebhookDeliveryResult::Failed(info) => {
+                            tracing::error!("Webhook failed to {}: {:?}", config_clone.url, info.error);
+                        }
+                    }
                 });
             }
-            
+
             (axum::http::StatusCode::OK, Json(serde_json::json!({ "id": id })))
         } else {
             (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": res.err().unwrap() })))
@@ -431,6 +468,87 @@ async fn update_webhooks(
     *current = configs;
     axum::http::StatusCode::OK
 }
+
+async fn get_webhook_logs(
+    State(state): State<Arc<AppState>>,
+) -> Json<Vec<models::WebhookLog>> {
+    Json(state.webhook_logger.get_logs())
+}
+
+// ── Alert API ──
+
+async fn get_alerts(
+    State(state): State<Arc<AppState>>,
+) -> Json<Vec<AlertRule>> {
+    Json(state.alert_engine.get_rules())
+}
+
+async fn create_alert(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let id = payload.get("id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+    let name = payload.get("name").and_then(|v| v.as_str()).unwrap_or("Untitled Alert").to_string();
+    let symbol = payload.get("symbol").and_then(|v| v.as_str()).unwrap_or("BTCUSDT").to_string();
+    let timeframe = payload.get("timeframe").and_then(|v| v.as_str()).unwrap_or("5m").to_string();
+    let condition_type = payload.get("condition_type").and_then(|v| v.as_str()).unwrap_or("crossing").to_string();
+    let condition_params = payload.get("condition_params").cloned().unwrap_or(serde_json::json!({}));
+    let frequency = payload.get("frequency").and_then(|v| v.as_str()).unwrap_or("OncePerBarClose").to_string();
+    let enabled = payload.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+
+    let actions = payload.get("actions")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter().map(|a| models::AlertActionConfig {
+                action_type: a.get("type").and_then(|v| v.as_str()).unwrap_or("webhook").to_string(),
+                webhook_config_id: a.get("webhook_config_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                url: a.get("url").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                email: a.get("email").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                enabled: a.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+            })
+            .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let rule = AlertRule {
+        id,
+        name,
+        symbol,
+        timeframe,
+        condition_type,
+        condition_params,
+        frequency,
+        actions,
+        enabled,
+        created_at: now,
+    };
+
+    state.alert_engine.add_rule(rule);
+
+    (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "success" })))
+}
+
+async fn delete_alert(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    if state.alert_engine.remove_rule(&id) {
+        (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "deleted" })))
+    } else {
+        (axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Alert rule not found" })))
+    }
+}
+
+// ── End Alert API ──
 
 async fn get_history(
     Query(params): Query<HistoryParams>,
@@ -783,31 +901,31 @@ async fn ai_chat(
     Json(request): Json<AIChatRequest>,
 ) -> impl IntoResponse {
     let session_id = uuid::Uuid::new_v4().to_string();
-    
+
     let (tx, mut rx) = mpsc::channel::<String>(100);
-    
+
     let request_clone = AIChatRequest {
         messages: request.messages.clone(),
         models: request.models.clone(),
         symbol: request.symbol.clone(),
         timeframe: request.timeframe.clone(),
     };
-    
+
     let ai_client = state.ai_client.clone();
-    
+
     tokio::spawn(async move {
         let _ = ai_client.chat(request_clone, session_id.clone(), tx).await;
     });
-    
+
     use axum::body::Body;
     use bytes::Bytes;
-    
+
     let stream = async_stream::stream! {
         while let Some(data) = rx.recv().await {
             yield Ok::<Bytes, std::convert::Infallible>(Bytes::from(data));
         }
     };
-    
+
     (
         [("Content-Type", "text/event-stream; charset=utf-8")],
         Body::from_stream(stream),

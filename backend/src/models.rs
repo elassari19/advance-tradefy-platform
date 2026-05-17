@@ -112,6 +112,67 @@ pub struct WebhookConfig {
     pub url: String,
     pub secret_token: String,
     pub enabled: bool,
+    #[serde(default = "default_template")]
+    pub template: String,
+    #[serde(default = "default_retry_count")]
+    pub retry_count: u32,
+    #[serde(default = "default_timeout_ms")]
+    pub timeout_ms: u64,
+}
+
+fn default_template() -> String {
+    r#"{"event_type":"strategy_signal","timestamp":"{{timestamp}}","trade":{{trade}},"security_token":"{{secret}}"}"#.to_string()
+}
+
+fn default_retry_count() -> u32 { 3 }
+
+fn default_timeout_ms() -> u64 { 5000 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WebhookLog {
+    pub id: String,
+    pub webhook_config_id: String,
+    pub event_type: String,
+    pub payload: serde_json::Value,
+    pub response_status: Option<i32>,
+    pub response_body: Option<String>,
+    pub error: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AlertRule {
+    pub id: String,
+    pub name: String,
+    pub symbol: String,
+    pub timeframe: String,
+    pub condition_type: String,
+    pub condition_params: serde_json::Value,
+    pub frequency: String,
+    pub actions: Vec<AlertActionConfig>,
+    pub enabled: bool,
+    pub created_at: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AlertActionConfig {
+    #[serde(rename = "type")]
+    pub action_type: String,
+    pub webhook_config_id: Option<String>,
+    pub url: Option<String>,
+    pub email: Option<String>,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TriggeredAlert {
+    pub rule_id: String,
+    pub rule_name: String,
+    pub symbol: String,
+    pub condition_type: String,
+    pub message: String,
+    pub timestamp: u64,
+    pub candle: Option<Candle>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

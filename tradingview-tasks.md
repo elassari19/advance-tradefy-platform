@@ -165,65 +165,65 @@
 
 ### Backend — Alert Engine
 
-- `[ ]` Create `backend/src/alerts.rs` module
-- `[ ]` Implement `AlertCondition` enum (Crossing, CrossingUp, CrossingDown, GT, LT, GTE, LTE, Range, Custom)
-- `[ ]` Implement `AlertRule` struct
-- `[ ]` Implement `AlertAction` enum (Webhook, Email, PushNotification, Sound)
-- `[ ]` Implement `AlertFrequency` enum (OncePerBarClose, OncePerBar, OnEveryTick)
-- `[ ]` Implement `AlertEngine::evaluate(candle, aggregator) -> Vec<TriggeredAlert>`
-- `[ ]` Implement condition evaluation logic (all condition types)
-- `[ ]` Implement `should_fire(rule, last_fired)` frequency check
-- `[ ]` Wire alert evaluation into main tick/candle processing loop
+- `[x]` Create `backend/src/alerts.rs` module
+- `[x]` Implement `AlertCondition` enum (Crossing, CrossingUp, CrossingDown, GT, LT, GTE, LTE, Range, Custom)
+- `[x]` Implement `AlertRule` struct
+- `[x]` Implement `AlertAction` enum (Webhook, Email, PushNotification, Sound)
+- `[x]` Implement `AlertFrequency` enum (OncePerBarClose, OncePerBar, OnEveryTick)
+- `[x]` Implement `AlertEngine::evaluate(candle, aggregator) -> Vec<TriggeredAlert>`
+- `[x]` Implement condition evaluation logic (all condition types)
+- `[x]` Implement `should_fire(rule, last_fired)` frequency check
+- `[x]` Wire alert evaluation into main tick/candle processing loop
 
 ### Backend — Alert CRUD API
 
-- `[ ]` Implement `GET /api/alerts` endpoint
-- `[ ]` Implement `POST /api/alerts` endpoint (create/update)
-- `[ ]` Implement `DELETE /api/alerts/:id` endpoint
+- `[x]` Implement `GET /api/alerts` endpoint
+- `[x]` Implement `POST /api/alerts` endpoint (create/update)
+- `[x]` Implement `DELETE /api/alerts/:id` endpoint
 
 ### Backend — Webhook Enhancements
 
-- `[ ]` Implement `dispatch_webhook_with_retry()` — 3 retries with exponential backoff
-- `[ ]` Implement customizable webhook payload template (`{{timestamp}}`, `{{trade}}`, etc.)
-- `[ ]` Implement webhook timeout configuration
-- `[ ]` Create `webhook_logs` table (migration)
-- `[ ]` Implement `GET /api/webhooks/logs` endpoint
-- `[ ]` Implement `log_webhook_delivery()` — log every dispatch attempt
-- `[ ]` Modify existing webhook dispatch in `webhooks.rs` to use retry + logging
-- `[ ]` Add `template`, `retry_count`, `timeout_ms` columns to `webhook_configs` table
-- `[ ]` Allow multiple webhook endpoints per alert
+- `[x]` Implement `dispatch_webhook_with_retry()` — 3 retries with exponential backoff
+- `[x]` Implement customizable webhook payload template (`{{timestamp}}`, `{{trade}}`, etc.)
+- `[x]` Implement webhook timeout configuration
+- `[x]` Create `webhook_logs` table (migration)
+- `[x]` Implement `GET /api/webhooks/logs` endpoint
+- `[x]` Implement `log_webhook_delivery()` — log every dispatch attempt
+- `[x]` Modify existing webhook dispatch in `webhooks.rs` to use retry + logging
+- `[x]` Add `template`, `retry_count`, `timeout_ms` columns to `webhook_configs` table
+- `[x]` Allow multiple webhook endpoints per alert
 
 ### Backend — Notification Channels
 
-- `[ ]` Implement desktop push via WebSocket message to frontend
-- `[ ]` Implement sound notification trigger (WebSocket → Web Audio API)
+- `[x]` Implement desktop push via WebSocket message to frontend
+- `[x]` Implement sound notification trigger (WebSocket → Web Audio API)
 - `[ ]` Implement email notification (via `lettre` crate or SendGrid)
 
 ### Frontend — Alert Creator UI
 
-- `[ ]` Create `frontend/src/components/alerts/AlertCreator.tsx`
-- `[ ]` Name, symbol, timeframe fields
-- `[ ]` Condition builder UI (type dropdown, series/value inputs)
-- `[ ]` Series selector referencing active indicators on the chart
-- `[ ]` Frequency selector (Once Per Bar Close / Once Per Bar / Every Tick)
-- `[ ]` Actions configuration (webhook URL, email, push toggle)
-- `[ ]` Alert preview text generation
-- `[ ]` Save/Cancel buttons → `POST /api/alerts`
+- `[x]` Create `frontend/src/components/alerts/AlertCreator.tsx`
+- `[x]` Name, symbol, timeframe fields
+- `[x]` Condition builder UI (type dropdown, series/value inputs)
+- `[x]` Series selector referencing active indicators on the chart
+- `[x]` Frequency selector (Once Per Bar Close / Once Per Bar / Every Tick)
+- `[x]` Actions configuration (webhook URL, email, push toggle)
+- `[x]` Alert preview text generation
+- `[x]` Save/Cancel buttons → `POST /api/alerts`
 
 ### Frontend — Alerts Dashboard
 
-- `[ ]` Create `frontend/src/components/alerts/AlertsList.tsx`
-- `[ ]` List all alert rules with enable/disable toggle
-- `[ ]` Edit and delete actions per rule
-- `[ ]` Last triggered timestamp display
-- `[ ]` Webhook delivery log viewer (expandable per webhook)
+- `[x]` Create `frontend/src/components/alerts/AlertsList.tsx`
+- `[x]` List all alert rules with enable/disable toggle
+- `[x]` Edit and delete actions per rule
+- `[x]` Last triggered timestamp display
+- `[x]` Webhook delivery log viewer (expandable per webhook)
 
 ### Frontend — Browser Notifications
 
-- `[ ]` Request Notification API permission on first alert
-- `[ ]` Show browser notification when WebSocket push received
-- `[ ]` Play alert sound using Web Audio API
-- `[ ]` Add /alerts route to navigation
+- `[x]` Request Notification API permission on first alert
+- `[x]` Show browser notification when WebSocket push received
+- `[x]` Play alert sound using Web Audio API
+- `[x]` Add /alerts route to navigation
 
 ---
 
