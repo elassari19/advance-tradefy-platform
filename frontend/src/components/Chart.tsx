@@ -1,9 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { createChart, ColorType, AreaSeries, LineSeries, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, IPriceLine } from 'lightweight-charts';
 import type { Candle } from '../hooks/useMarketData';
 import type { Position } from '../hooks/useSimulator';
-import type { IndicatorConfig, IndicatorLine } from '../utils/indicators';
+import type { IndicatorConfig } from '../utils/indicators';
 import { batchEvaluateIndicators } from '../utils/indicators';
 
 type ChartType = 'area' | 'line' | 'candle';
@@ -20,9 +20,7 @@ const SUB_CHART_HEIGHT = 130;
 
 export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePosition, chartType, indicatorConfigs }) => {
   const mainContainerRef = useRef<HTMLDivElement>(null);
-  const subContainerRef = useRef<HTMLDivElement>(null);
   const mainChartRef = useRef<IChartApi | null>(null);
-  const subChartRef = useRef<IChartApi | null>(null);
   const areaSeriesRef = useRef<ISeriesApi<'Area'> | null>(null);
   const lineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -31,16 +29,34 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
   const positionsRef = useRef<Position[]>(positions);
   const activeSeriesRef = useRef<ISeriesApi<any> | null>(null);
   const indicatorSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
-  const subIndicatorSeriesRef = useRef<Map<string, ISeriesApi<'Line' | 'Histogram'>>>(new Map());
   const prevMainLineIdsRef = useRef<string[]>([]);
-  const prevSubLineIdsRef = useRef<string[]>([]);
   const isSyncingRef = useRef(false);
+
+  const subContainerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const subChartRefs = useRef<Map<string, IChartApi>>(new Map());
+  const subIndicatorSeriesRef = useRef<Map<string, ISeriesApi<'Line' | 'Histogram'>>>(new Map());
+  const subSeriesOwnerRef = useRef<Map<string, string>>(new Map());
+  const prevSubLineIdsRef = useRef<string[]>([]);
+
+  const subChartKeys = useMemo(() => {
+    return indicatorConfigs
+      .filter(c => c.type === 'rsi' || c.type === 'macd')
+      .map(c => c.id);
+  }, [indicatorConfigs]);
+
+  const showSubChart = subChartKeys.length > 0;
+
+  const setSubContainerRef = (key: string) => (el: HTMLDivElement | null) => {
+    if (el) {
+      subContainerRefs.current.set(key, el);
+    } else {
+      subContainerRefs.current.delete(key);
+    }
+  };
 
   useEffect(() => {
     positionsRef.current = positions;
   }, [positions]);
-
-  const showSubChart = indicatorConfigs.some(c => c.type === 'rsi' || c.type === 'macd');
 
   // ─── Main Chart ──────────────────────────────────────
   useEffect(() => {
@@ -144,90 +160,108 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
     };
   }, [onUpdatePosition]);
 
-  // ─── Sub Chart ───────────────────────────────────────
+  // ─── Sub Charts ───────────────────────────────────────
   useEffect(() => {
-    if (!subContainerRef.current) return;
-    if (!showSubChart) {
-      if (subChartRef.current) {
-        subChartRef.current.remove();
-        subChartRef.current = null;
-      }
-      return;
+    for (const [, chart] of subChartRefs.current) { chart.remove(); }
+    subChartRefs.current.clear();
+    subIndicatorSeriesRef.current.clear();
+    subSeriesOwnerRef.current.clear();
+    prevSubLineIdsRef.current = [];
+
+    if (!showSubChart) return;
+
+    for (const key of subChartKeys) {
+      const el = subContainerRefs.current.get(key);
+      if (!el) continue;
+
+      const chart = createChart(el, {
+        layout: {
+          background: { type: ColorType.Solid, color: '#09090b' },
+          textColor: '#a1a1aa',
+        },
+        grid: {
+          vertLines: { color: '#27272a' },
+          horzLines: { color: '#27272a' },
+        },
+        width: el.clientWidth,
+        height: SUB_CHART_HEIGHT,
+        timeScale: {
+          timeVisible: true,
+          secondsVisible: false,
+        },
+        handleScroll: false,
+        handleScale: false,
+        crosshair: { mode: 0 },
+        rightPriceScale: {
+          borderColor: '#27272a',
+        },
+      });
+
+      subChartRefs.current.set(key, chart);
     }
 
-    const chart = createChart(subContainerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: '#09090b' },
-        textColor: '#a1a1aa',
-      },
-      grid: {
-        vertLines: { color: '#27272a' },
-        horzLines: { color: '#27272a' },
-      },
-      width: subContainerRef.current.clientWidth,
-      height: SUB_CHART_HEIGHT,
-      timeScale: {
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      handleScroll: false,
-      handleScale: false,
-      crosshair: { mode: 0 },
-      rightPriceScale: {
-        borderColor: '#27272a',
-      },
-    });
-
-    subChartRef.current = chart;
-
     const handleResize = () => {
-      if (subContainerRef.current && chart) {
-        chart.applyOptions({
-          width: subContainerRef.current.clientWidth,
-        });
+      for (const [key, chart] of subChartRefs.current) {
+        const el = subContainerRefs.current.get(key);
+        if (el) chart.applyOptions({ width: el.clientWidth });
       }
     };
     window.addEventListener('resize', handleResize);
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      chart.remove();
-      subChartRef.current = null;
+      for (const [, chart] of subChartRefs.current) { chart.remove(); }
+      subChartRefs.current.clear();
+      subIndicatorSeriesRef.current.clear();
+      subSeriesOwnerRef.current.clear();
     };
-  }, [showSubChart]);
+  }, [showSubChart, subChartKeys]);
 
   // ─── Time scale sync ─────────────────────────────────
   useEffect(() => {
     const main = mainChartRef.current;
-    const sub = subChartRef.current;
-    if (!main || !sub) return;
+    if (!main || subChartRefs.current.size === 0) return;
 
-    const syncMainToSub = () => {
+    const subCharts = Array.from(subChartRefs.current.values());
+
+    const mainHandler = () => {
       if (isSyncingRef.current) return;
       isSyncingRef.current = true;
       const range = main.timeScale().getVisibleLogicalRange();
-      if (range) sub.timeScale().setVisibleLogicalRange(range);
+      if (range) {
+        for (const sc of subCharts) sc.timeScale().setVisibleLogicalRange(range);
+      }
       isSyncingRef.current = false;
     };
 
-    const syncSubToMain = () => {
-      if (isSyncingRef.current) return;
-      isSyncingRef.current = true;
-      const range = sub.timeScale().getVisibleLogicalRange();
-      if (range) main.timeScale().setVisibleLogicalRange(range);
-      isSyncingRef.current = false;
-    };
+    const subHandlers = subCharts.map(sc => {
+      const handler = () => {
+        if (isSyncingRef.current) return;
+        isSyncingRef.current = true;
+        const range = sc.timeScale().getVisibleLogicalRange();
+        if (range) {
+          main.timeScale().setVisibleLogicalRange(range);
+          for (const other of subCharts) {
+            if (other !== sc) other.timeScale().setVisibleLogicalRange(range);
+          }
+        }
+        isSyncingRef.current = false;
+      };
+      return { chart: sc, handler };
+    });
 
-    main.timeScale().subscribeVisibleLogicalRangeChange(syncMainToSub);
-    sub.timeScale().subscribeVisibleLogicalRangeChange(syncSubToMain);
+    main.timeScale().subscribeVisibleLogicalRangeChange(mainHandler);
+    for (const { chart, handler } of subHandlers) {
+      chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
+    }
 
     return () => {
-      main.timeScale().unsubscribeVisibleLogicalRangeChange(syncMainToSub);
-      if (subChartRef.current) {
-        sub.timeScale().unsubscribeVisibleLogicalRangeChange(syncSubToMain);
+      main.timeScale().unsubscribeVisibleLogicalRangeChange(mainHandler);
+      for (const { chart, handler } of subHandlers) {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
       }
     };
-  }, [showSubChart]);
+  }, [showSubChart, subChartKeys]);
 
   // ─── Main chart type series ──────────────────────────
   useEffect(() => {
@@ -284,79 +318,94 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
   // ─── All indicator series (batch evaluation) ──────────
   useEffect(() => {
     const mainChart = mainChartRef.current;
-    const subChart = subChartRef.current;
     if (!mainChart) return;
 
     let cancelled = false;
 
     (async () => {
-      const { lines: allLines, paneMap } = await batchEvaluateIndicators(candles, indicatorConfigs);
-
+      const allEntries = await batchEvaluateIndicators(candles, indicatorConfigs);
       if (cancelled) return;
 
-      // Overlay indicators
-      const overlayLines = allLines.filter(l => (paneMap[l.id] || 'overlay') === 'overlay');
-      const overlayIds = overlayLines.map(l => l.id);
-      const prevMainIds = prevMainLineIdsRef.current;
+      // ── Overlay (main chart) ──
+      const overlayEntries = allEntries.filter(e => e.pane === 'overlay');
+      const overlayIds = overlayEntries.map(e => e.line.id);
 
-      for (const prevId of prevMainIds) {
+      for (const prevId of prevMainLineIdsRef.current) {
         if (!overlayIds.includes(prevId)) {
           const s = indicatorSeriesRef.current.get(prevId);
           if (s) { mainChart.removeSeries(s); indicatorSeriesRef.current.delete(prevId); }
         }
       }
 
-      for (const line of overlayLines) {
-        let s = indicatorSeriesRef.current.get(line.id);
+      for (const entry of overlayEntries) {
+        let s = indicatorSeriesRef.current.get(entry.line.id);
         if (!s) {
           s = mainChart.addSeries(LineSeries, {
-            color: line.color, lineWidth: 1.5, lastValueVisible: false, priceLineVisible: false,
+            color: entry.line.color, lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
           });
-          indicatorSeriesRef.current.set(line.id, s);
+          indicatorSeriesRef.current.set(entry.line.id, s);
         }
-        if (line.values.length > 0) {
-          s.setData(line.values.filter(v => Number.isFinite(v.value)).map(v => ({ time: v.time as any, value: v.value })));
+        if (entry.line.values.length > 0) {
+            s.setData(entry.line.values.filter(v => Number.isFinite(v.value)).map(v => ({ time: v.time as any, value: v.value })));
         }
       }
-
       prevMainLineIdsRef.current = overlayIds;
 
-      // Sub-chart indicators
-      if (subChart) {
-        const subLines = allLines.filter(l => (paneMap[l.id] || 'overlay') === 'sub');
-        const subIds = subLines.map(l => l.id);
-        const prevSubIds = prevSubLineIdsRef.current;
+      // ── Sub charts ──
+      const subEntries = allEntries.filter(e => e.pane === 'sub');
+      const subIds = subEntries.map(e => e.line.id);
+      const configIdByIndex = new Map(indicatorConfigs.map((c, i) => [i, c.id]));
 
-        for (const prevId of prevSubIds) {
-          if (!subIds.includes(prevId)) {
-            const s = subIndicatorSeriesRef.current.get(prevId);
-            if (s) { subChart.removeSeries(s); subIndicatorSeriesRef.current.delete(prevId); }
+      for (const prevId of prevSubLineIdsRef.current) {
+        if (!subIds.includes(prevId)) {
+          const s = subIndicatorSeriesRef.current.get(prevId);
+          const ownerId = subSeriesOwnerRef.current.get(prevId);
+          if (s && ownerId) {
+            const subChart = subChartRefs.current.get(ownerId);
+            if (subChart) subChart.removeSeries(s);
           }
+          subIndicatorSeriesRef.current.delete(prevId);
+          subSeriesOwnerRef.current.delete(prevId);
         }
+      }
 
-        for (const line of subLines) {
-          let s = subIndicatorSeriesRef.current.get(line.id);
+      const subByConfig = new Map<number, typeof subEntries>();
+      for (const entry of subEntries) {
+        const list = subByConfig.get(entry.configIndex) || [];
+        list.push(entry);
+        subByConfig.set(entry.configIndex, list);
+      }
+
+      for (const [configIdx, entries] of subByConfig) {
+        const configId = configIdByIndex.get(configIdx);
+        if (!configId) continue;
+        const subChart = subChartRefs.current.get(configId);
+        if (!subChart) continue;
+
+        for (const entry of entries) {
+          let s = subIndicatorSeriesRef.current.get(entry.line.id);
           if (!s) {
-            const isHistogram = line.id.includes('histogram');
+            const isHistogram = entry.line.id.includes('histogram');
             if (isHistogram) {
               s = subChart.addSeries(HistogramSeries, {
-                color: line.color, priceFormat: { type: 'volume' },
+                color: entry.line.color, priceFormat: { type: 'volume' },
                 priceLineVisible: false, lastValueVisible: false,
-              }) as ISeriesApi<'Line'>;
+              }) as unknown as ISeriesApi<'Line'>;
             } else {
               s = subChart.addSeries(LineSeries, {
-                color: line.color, lineWidth: 1.5, lastValueVisible: false, priceLineVisible: false,
-              }) as ISeriesApi<'Line'>;
+                color: entry.line.color, lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
+              }) as unknown as ISeriesApi<'Line'>;
             }
-            subIndicatorSeriesRef.current.set(line.id, s);
+            subIndicatorSeriesRef.current.set(entry.line.id, s);
+            subSeriesOwnerRef.current.set(entry.line.id, configId);
           }
-          if (line.values.length > 0) {
-            s.setData(line.values.filter(v => Number.isFinite(v.value)).map(v => ({ time: v.time as any, value: v.value })));
+          if (entry.line.values.length > 0) {
+          s.setData(entry.line.values.filter(v => Number.isFinite(v.value)).map(v => ({ time: v.time as any, value: v.value })));
           }
         }
-
-        prevSubLineIdsRef.current = subIds;
       }
+
+      prevSubLineIdsRef.current = subIds;
     })();
 
     return () => { cancelled = true; };
@@ -365,12 +414,24 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
   return (
     <div className="w-full h-full relative cursor-crosshair flex flex-col">
       <div ref={mainContainerRef} className="flex-1 min-h-0" />
-      {showSubChart && (
-        <>
+      {subChartKeys.map((key, idx) => (
+        <React.Fragment key={key}>
+          <div className={idx === 0 ? 'h-px bg-zinc-800 shrink-0' : ''} />
+          <div style={{ height: SUB_CHART_HEIGHT }} className="bg-zinc-900/50 shrink-0">
+            <div className="text-[10px] font-medium text-zinc-500 px-2 leading-4">
+              {(() => {
+                const c = indicatorConfigs.find(cfg => cfg.id === key);
+                if (c?.name) return c.name;
+                if (c?.type === 'rsi') return `RSI(${c.period})`;
+                if (c?.type === 'macd') return `MACD(${c.fastPeriod},${c.slowPeriod})`;
+                return c?.type?.toUpperCase() || key;
+              })()}
+            </div>
+            <div ref={setSubContainerRef(key)} className="w-full" style={{ height: SUB_CHART_HEIGHT - 16 }} />
+          </div>
           <div className="h-px bg-zinc-800 shrink-0" />
-          <div ref={subContainerRef} style={{ height: SUB_CHART_HEIGHT }} className="shrink-0" />
-        </>
-      )}
+        </React.Fragment>
+      ))}
     </div>
   );
 };

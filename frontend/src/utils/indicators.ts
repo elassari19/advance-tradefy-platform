@@ -291,21 +291,34 @@ interface BatchResponse {
   results: BatchResult[];
 }
 
+export interface BatchLineEntry {
+  line: IndicatorLine;
+  configIndex: number;
+  pane: 'overlay' | 'sub';
+}
+
+async function evaluateBuiltInConfig(
+  config: IndicatorConfig, candles: Candle[], configIndex: number,
+): Promise<BatchLineEntry[]> {
+  const lines = await resolveIndicatorLines(candles, config);
+  const pane: 'overlay' | 'sub' = (config.type === 'rsi' || config.type === 'macd') ? 'sub' : 'overlay';
+  return lines.map(line => ({ line, configIndex, pane }));
+}
+
 export async function batchEvaluateIndicators(
   candles: Candle[],
   configs: IndicatorConfig[],
-): Promise<{ lines: IndicatorLine[]; paneMap: Record<string, 'overlay' | 'sub'> }> {
-  const builtInConfigs = configs.filter(c => c.type !== 'custom');
-  const customConfigs = configs.filter(c => c.type === 'custom');
+): Promise<BatchLineEntry[]> {
+  const results: BatchLineEntry[] = [];
+  const builtInIdxs = configs.map((c, i) => ({ c, i })).filter(x => x.c.type !== 'custom');
+  const customIdxs = configs.map((c, i) => ({ c, i })).filter(x => x.c.type === 'custom');
 
-  const allLines: IndicatorLine[] = [];
-  const paneMap: Record<string, 'overlay' | 'sub'> = {};
-
-  if (builtInConfigs.length > 0) {
+  if (builtInIdxs.length > 0) {
+    let batchUsed = false;
     try {
       const body = {
         candles: candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })),
-        indicators: builtInConfigs.map(c => ({
+        indicators: builtInIdxs.map(({ c }) => ({
           type: c.type,
           params: {
             period: c.period,
@@ -327,66 +340,67 @@ export async function batchEvaluateIndicators(
       });
 
       if (res.ok) {
+        batchUsed = true;
         const data: BatchResponse = await res.json();
         for (let ri = 0; ri < data.results.length; ri++) {
           const result = data.results[ri];
-          const config = builtInConfigs[ri];
-          const pane = config.type === 'rsi' || config.type === 'macd' ? 'sub' : 'overlay';
+          const { c: config, i: configIndex } = builtInIdxs[ri];
+          const pane: 'overlay' | 'sub' = (config.type === 'rsi' || config.type === 'macd') ? 'sub' : 'overlay';
           for (const plot of result.output.plots) {
             if (plot.type === 'line' || plot.type === 'histogram') {
-              const values = candles.map((c, i) => ({
-                time: c.time,
-                value: plot.values[i],
-              }));
-              const line: IndicatorLine = {
-                id: plot.id,
-                label: plot.label || plot.id,
-                color: plot.color,
-                values,
-              };
-              allLines.push(line);
-              paneMap[plot.id] = pane;
+              const values: IndicatorValue[] = [];
+              for (let ci = 0; ci < candles.length; ci++) {
+                const v = plot.values[ci];
+                if (v !== null) values.push({ time: candles[ci].time, value: v });
+              }
+              results.push({
+                line: {
+                  id: `${config.id}-${plot.id}`,
+                  label: plot.label || plot.id,
+                  color: plot.color,
+                  values,
+                },
+                configIndex,
+                pane,
+              });
             }
             if (plot.type === 'band' && plot.upper && plot.lower) {
-              const upperValues = candles.map((c, i) => ({ time: c.time, value: plot.upper![i] }));
-              const lowerValues = candles.map((c, i) => ({ time: c.time, value: plot.lower![i] }));
-              const midValues = candles.map((c, i) => {
-                const u = plot.upper![i];
-                const l = plot.lower![i];
-                return { time: c.time, value: u !== null && l !== null ? (u + l) / 2 : null };
-              });
-              allLines.push({ id: `${config.id}-upper`, label: plot.label_upper || 'Upper', color: plot.color, values: upperValues });
-              allLines.push({ id: `${config.id}-lower`, label: plot.label_lower || 'Lower', color: plot.color, values: lowerValues });
-              allLines.push({ id: `${config.id}-middle`, label: 'Middle', color: config.color, values: midValues });
-              for (const subId of [`${config.id}-upper`, `${config.id}-lower`, `${config.id}-middle`]) {
-                paneMap[subId] = pane;
+              const upperValues: IndicatorValue[] = [];
+              const lowerValues: IndicatorValue[] = [];
+              const midValues: IndicatorValue[] = [];
+              for (let ci = 0; ci < candles.length; ci++) {
+                const u = plot.upper![ci];
+                const l = plot.lower![ci];
+                if (u === null || l === null) continue;
+                upperValues.push({ time: candles[ci].time, value: u });
+                lowerValues.push({ time: candles[ci].time, value: l });
+                midValues.push({ time: candles[ci].time, value: (u + l) / 2 });
               }
+              results.push({ line: { id: `${config.id}-upper`, label: plot.label_upper || 'Upper', color: plot.color, values: upperValues }, configIndex, pane });
+              results.push({ line: { id: `${config.id}-lower`, label: plot.label_lower || 'Lower', color: plot.color, values: lowerValues }, configIndex, pane });
+              results.push({ line: { id: `${config.id}-middle`, label: 'Middle', color: config.color, values: midValues }, configIndex, pane });
             }
           }
         }
-      } else {
-        throw new Error('Batch evaluate failed');
       }
     } catch {
-      for (const config of builtInConfigs) {
-        const lines = await resolveIndicatorLines(candles, config);
-        const pane = config.type === 'rsi' || config.type === 'macd' ? 'sub' : 'overlay';
-        for (const line of lines) {
-          allLines.push(line);
-          paneMap[line.id] = pane;
-        }
+      // fall through to per-config evaluation
+    }
+
+    if (!batchUsed) {
+      for (const { c: config, i: configIndex } of builtInIdxs) {
+        const entries = await evaluateBuiltInConfig(config, candles, configIndex);
+        results.push(...entries);
       }
     }
   }
 
-  for (const config of customConfigs) {
+  for (const { c: config, i: configIndex } of customIdxs) {
     const lines = await resolveIndicatorLines(candles, config);
-    const pane = 'overlay';
     for (const line of lines) {
-      allLines.push(line);
-      paneMap[line.id] = pane;
+      results.push({ line, configIndex, pane: 'overlay' });
     }
   }
 
-  return { lines: allLines, paneMap };
+  return results;
 }

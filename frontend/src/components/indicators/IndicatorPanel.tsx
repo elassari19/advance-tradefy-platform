@@ -386,7 +386,7 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
                     className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium"
                     style={{ backgroundColor: config.color + '20', color: config.color, border: `1px solid ${config.color}40` }}
                   >
-                    {config.label || config.name || config.type}
+                    {config.name || config.type}
                     <button onClick={() => onRemoveIndicator(config.id)} className="hover:opacity-70">
                       <X size={10} />
                     </button>

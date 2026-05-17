@@ -154,10 +154,10 @@
 
 ### Frontend — Sub-char & Overlay Rendering
 
-- `[ ]` Update `Chart.tsx` to receive structured indicator data from API
-- `[ ]` Auto-assign overlay vs sub-chart pane based on indicator type
-- `[ ]` Support multi-pane layout (2+ sub-charts stacked)
-- `[ ]` Time scale sync for all panes
+- `[x]` Update `Chart.tsx` to receive structured indicator data from API
+- `[x]` Auto-assign overlay vs sub-chart pane based on indicator type
+- `[x]` Support multi-pane layout (2+ sub-charts stacked)
+- `[x]` Time scale sync for all panes
 
 ---
 
