@@ -11,7 +11,7 @@ import { WebhookSettings } from "./components/settings/WebhookSettings";
 import { SymbolSearchModal } from "./components/settings/SymbolSearchModal";
 import { TimeframeModal } from "./components/settings/TimeframeModal";
 import { AIChat } from "./components/chat/AIChat";
-import { IndicatorsModal } from "./components/IndicatorsModal";
+import { IndicatorPanel } from "./components/indicators/IndicatorPanel";
 import { CustomIndicatorModal } from "./components/CustomIndicatorModal";
 import { BacktestConfig } from "./components/backtest/BacktestConfig";
 import { BacktestResults } from "./components/backtest/BacktestResults";
@@ -368,7 +368,7 @@ export function App() {
         onSelect={handleAddSymbol}
       />
 
-      <IndicatorsModal
+      <IndicatorPanel
         isOpen={showIndicatorsModal}
         onClose={() => setShowIndicatorsModal(false)}
         activeIndicators={currentIndicators}

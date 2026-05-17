@@ -270,3 +270,123 @@ export function saveCustomIndicator(def: CustomIndicatorDef) {
   else list.push(def);
   localStorage.setItem('customIndicators', JSON.stringify(list));
 }
+
+interface BatchPlot {
+  type: string; id: string; label?: string; color: string; values: (number | null)[];
+  price?: number; style?: string;
+  upper?: (number | null)[]; lower?: (number | null)[];
+  label_upper?: string; label_lower?: string; fill_color?: string;
+}
+
+interface BatchOutput {
+  plots: BatchPlot[];
+}
+
+interface BatchResult {
+  output: BatchOutput;
+  pane: string;
+}
+
+interface BatchResponse {
+  results: BatchResult[];
+}
+
+export async function batchEvaluateIndicators(
+  candles: Candle[],
+  configs: IndicatorConfig[],
+): Promise<{ lines: IndicatorLine[]; paneMap: Record<string, 'overlay' | 'sub'> }> {
+  const builtInConfigs = configs.filter(c => c.type !== 'custom');
+  const customConfigs = configs.filter(c => c.type === 'custom');
+
+  const allLines: IndicatorLine[] = [];
+  const paneMap: Record<string, 'overlay' | 'sub'> = {};
+
+  if (builtInConfigs.length > 0) {
+    try {
+      const body = {
+        candles: candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })),
+        indicators: builtInConfigs.map(c => ({
+          type: c.type,
+          params: {
+            period: c.period,
+            fastPeriod: c.fastPeriod,
+            slowPeriod: c.slowPeriod,
+            signalPeriod: c.signalPeriod,
+            bbPeriod: c.bbPeriod,
+            bbStdDev: c.bbStdDev,
+          },
+          color: c.color,
+          pane: (c.type === 'rsi' || c.type === 'macd') ? 'sub' : 'overlay',
+        })),
+      };
+
+      const res = await fetch(`${API_URL}/api/indicators/evaluate-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (res.ok) {
+        const data: BatchResponse = await res.json();
+        for (let ri = 0; ri < data.results.length; ri++) {
+          const result = data.results[ri];
+          const config = builtInConfigs[ri];
+          const pane = config.type === 'rsi' || config.type === 'macd' ? 'sub' : 'overlay';
+          for (const plot of result.output.plots) {
+            if (plot.type === 'line' || plot.type === 'histogram') {
+              const values = candles.map((c, i) => ({
+                time: c.time,
+                value: plot.values[i],
+              }));
+              const line: IndicatorLine = {
+                id: plot.id,
+                label: plot.label || plot.id,
+                color: plot.color,
+                values,
+              };
+              allLines.push(line);
+              paneMap[plot.id] = pane;
+            }
+            if (plot.type === 'band' && plot.upper && plot.lower) {
+              const upperValues = candles.map((c, i) => ({ time: c.time, value: plot.upper![i] }));
+              const lowerValues = candles.map((c, i) => ({ time: c.time, value: plot.lower![i] }));
+              const midValues = candles.map((c, i) => {
+                const u = plot.upper![i];
+                const l = plot.lower![i];
+                return { time: c.time, value: u !== null && l !== null ? (u + l) / 2 : null };
+              });
+              allLines.push({ id: `${config.id}-upper`, label: plot.label_upper || 'Upper', color: plot.color, values: upperValues });
+              allLines.push({ id: `${config.id}-lower`, label: plot.label_lower || 'Lower', color: plot.color, values: lowerValues });
+              allLines.push({ id: `${config.id}-middle`, label: 'Middle', color: config.color, values: midValues });
+              for (const subId of [`${config.id}-upper`, `${config.id}-lower`, `${config.id}-middle`]) {
+                paneMap[subId] = pane;
+              }
+            }
+          }
+        }
+      } else {
+        throw new Error('Batch evaluate failed');
+      }
+    } catch {
+      for (const config of builtInConfigs) {
+        const lines = await resolveIndicatorLines(candles, config);
+        const pane = config.type === 'rsi' || config.type === 'macd' ? 'sub' : 'overlay';
+        for (const line of lines) {
+          allLines.push(line);
+          paneMap[line.id] = pane;
+        }
+      }
+    }
+  }
+
+  for (const config of customConfigs) {
+    const lines = await resolveIndicatorLines(candles, config);
+    const pane = 'overlay';
+    for (const line of lines) {
+      allLines.push(line);
+      paneMap[line.id] = pane;
+    }
+  }
+
+  return { lines: allLines, paneMap };
+}

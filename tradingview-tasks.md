@@ -144,13 +144,13 @@
 
 ### Frontend — Indicator Panel
 
-- `[ ]` Create `frontend/src/components/indicators/IndicatorPanel.tsx`
-- `[ ]` Search bar for filtering indicators
-- `[ ]` Category groups: Favorites, Trend, Oscillators, Volume, Custom
-- `[ ]` Indicator list with add/remove toggles
-- `[ ]` Expandable parameter configuration (period, color, style) per indicator
-- `[ ]` Connect to `POST /api/indicators/evaluate-batch` for data
-- `[ ]` Replace client-side `resolveIndicatorLines()` with server-side batch call
+- `[x]` Create `frontend/src/components/indicators/IndicatorPanel.tsx`
+- `[x]` Search bar for filtering indicators
+- `[x]` Category groups: Favorites, Trend, Oscillators, Volume, Custom
+- `[x]` Indicator list with add/remove toggles
+- `[x]` Expandable parameter configuration (period, color, style) per indicator
+- `[x]` Connect to `POST /api/indicators/evaluate-batch` for data
+- `[x]` Replace client-side `resolveIndicatorLines()` with server-side batch call
 
 ### Frontend — Sub-char & Overlay Rendering
 
