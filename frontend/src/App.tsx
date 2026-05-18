@@ -21,7 +21,7 @@ import { AlertCreator } from "./components/alerts/AlertCreator";
 import { AlertsList } from "./components/alerts/AlertsList";
 import type { WebhookConfig } from "./hooks/useSimulator";
 import type { IndicatorConfig, CustomIndicatorDef } from "./utils/indicators";
-import type { BacktestResult, BacktestRequest } from "./hooks/useBacktest";
+import type { BacktestResult, BacktestRequest, BacktestTrade } from "./hooks/useBacktest";
 import type { AlertRule, TriggeredAlert, WebhookLog } from "./hooks/useSimulator";
 
 type View = 'trade' | 'backtest' | 'script' | 'alerts';
@@ -132,7 +132,7 @@ export function App() {
             } else if ('Notification' in window && Notification.permission === 'granted') {
               new Notification(`Alert: ${data.rule_name}`, {
                 body: data.message,
-                icon: '/vite.svg',
+                icon: '/favicon.svg',
               });
             }
             setNotificationSent(prev => new Set(prev).add(data.rule_id + data.timestamp));
@@ -182,6 +182,16 @@ export function App() {
   const currentStrategyActive = activeStrategySymbols.includes(activeSymbol.replace('/', ''));
   const currentIndicators = indicatorConfigs[activeSymbol] ?? [];
 
+    const handleStrategyCodeChange = useCallback((code: string) => {
+    setStrategyCodes(prev => ({ ...prev, [activeSymbol]: code }));
+  }, [activeSymbol]);
+
+  const handleDeployStrategy = useCallback(async (symbol: string, code: string) => {
+    const rawSymbol = symbol.replace('/', '');
+    await deployStrategy(rawSymbol, code);
+    setActiveStrategySymbols(prev => prev.includes(rawSymbol) ? prev : [...prev, rawSymbol]);
+  }, [deployStrategy]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -201,16 +211,6 @@ export function App() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [currentStrategyCode, activeSymbol, handleDeployStrategy, view]);
-
-  const handleStrategyCodeChange = useCallback((code: string) => {
-    setStrategyCodes(prev => ({ ...prev, [activeSymbol]: code }));
-  }, [activeSymbol]);
-
-  const handleDeployStrategy = useCallback(async (symbol: string, code: string) => {
-    const rawSymbol = symbol.replace('/', '');
-    await deployStrategy(rawSymbol, code);
-    setActiveStrategySymbols(prev => prev.includes(rawSymbol) ? prev : [...prev, rawSymbol]);
-  }, [deployStrategy]);
 
   const handleRemoveStrategy = useCallback(async (symbol: string) => {
     const rawSymbol = symbol.replace('/', '');
@@ -296,10 +296,6 @@ export function App() {
 
   const handleLoadStrategy = useCallback(() => {
     setShowStrategyBrowser(true);
-  }, []);
-
-  const handleOptimizeRun = useCallback(async () => {
-    setOptimizeOpen(true);
   }, []);
 
   const handleAddSymbol = useCallback((symbol: string) => {

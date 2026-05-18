@@ -15,7 +15,7 @@ export interface Candle {
   volume?: number;
 }
 
-const API_URL = 'http://localhost:3000';
+const API_URL = 'http://127.0.0.1:3000';
 
 function formatSymbol(symbol: string): string {
   return symbol.replace('/', '');
@@ -74,7 +74,7 @@ function useMarketDataForSymbol(symbol: string, timeframe: number) {
     fetchHistory(symbol, timeframe);
 
     const connectTick = () => {
-      tickWs.current = new WebSocket('ws://localhost:3000/ws/live');
+      tickWs.current = new WebSocket('ws://127.0.0.1:3000/ws/live');
 
       tickWs.current.onopen = () => {
         if (mountedRef.current) setIsConnected(true);
@@ -130,7 +130,7 @@ function useMarketDataForSymbol(symbol: string, timeframe: number) {
     };
 
     const connectCandle = () => {
-      candleWs.current = new WebSocket('ws://localhost:3000/ws/candles');
+      candleWs.current = new WebSocket('ws://127.0.0.1:3000/ws/candles');
 
       candleWs.current.onmessage = (event) => {
         if (!mountedRef.current) return;

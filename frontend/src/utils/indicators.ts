@@ -1,6 +1,6 @@
 import type { Candle } from '../hooks/useMarketData';
 
-const API_URL = 'http://localhost:3000';
+const API_URL = 'http://127.0.0.1:3000';
 
 export type IndicatorType = 'sma' | 'ema' | 'rsi' | 'macd' | 'bollinger' | 'custom';
 
