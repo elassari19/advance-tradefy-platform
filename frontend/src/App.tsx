@@ -7,6 +7,7 @@ import { Chart } from "./components/Chart";
 import { OrderPanel } from "./components/order/OrderPanel";
 import { TerminalTabs } from "./components/terminal/TerminalTabs";
 import { Header } from "./components/layout/Header";
+import { Sidebar } from "./components/layout/Sidebar";
 import { WebhookSettings } from "./components/settings/WebhookSettings";
 import { SymbolSearchModal } from "./components/settings/SymbolSearchModal";
 import { TimeframeModal } from "./components/settings/TimeframeModal";
@@ -38,6 +39,7 @@ function formatTimeframe(minutes: number): string {
 
 export function App() {
   const [view, setView] = useState<View>('trade');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
   const [showTimeframeModal, setShowTimeframeModal] = useState(false);
@@ -365,17 +367,18 @@ export function App() {
 
   return (
     <div className="h-screen w-screen bg-[#09090b] text-[#fafafa] font-sans">
+      <Sidebar view={view} onViewChange={setView} isOpen={sidebarOpen} alertCount={alerts.length} />
+      <div className={`h-full ${sidebarOpen ? 'ml-14' : ''}`}>
       <Header
-        view={view}
-        onViewChange={setView}
         simState={simState}
         isConnected={isConnected}
         onOpenSettings={() => setShowSettings(true)}
-        alertCount={alerts.length}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
       />
 
       {view === 'trade' && (
-        <div className="grid h-[calc(100vh-64px)] grid-cols-[1fr_300px]">
+        <div className="grid h-[calc(100vh-56px)] grid-cols-[1fr_300px]">
           <main className="flex flex-col overflow-hidden bg-[#09090b]">
             <div className="flex items-center justify-between border-b border-zinc-800 bg-[#09090b] overflow-x-auto scrollbar-none shrink-0">
               <div className="flex items-center">
@@ -501,7 +504,7 @@ export function App() {
       )}
 
       {view === 'backtest' && (
-        <div className="h-[calc(100vh-64px)] grid grid-cols-[360px_1fr] overflow-hidden">
+        <div className="h-[calc(100vh-56px)] grid grid-cols-[360px_1fr] overflow-hidden">
           <div className="overflow-y-auto border-r border-zinc-800 p-4 space-y-4">
             <BacktestConfig
               strategyCode={currentStrategyCode}
@@ -565,7 +568,7 @@ export function App() {
       )}
 
       {view === 'alerts' && (
-        <div className="h-[calc(100vh-64px)]">
+        <div className="h-[calc(100vh-56px)]">
           <AlertsList
             alerts={alerts}
             webhookLogs={webhookLogs}
@@ -663,6 +666,7 @@ export function App() {
           {showBacktestOverlay ? 'Hide Trades' : 'Show Trades'}
         </button>
       )}
+      </div>
     </div>
   );
 }
