@@ -19,6 +19,30 @@ const config: ForgeConfig = {
     extraResource: ['../frontend/dist'],
     osxSign: {},
     osxNotarize: undefined,
+    // ── 9.5 Deep Link Protocol ──
+    protocols: [
+      {
+        name: 'Tradefy Protocol',
+        schemes: ['tradefy'],
+      },
+    ],
+    // ── 9.4 File Association ──
+    extendInfo: {
+      CFBundleURLTypes: [
+        {
+          CFBundleURLName: 'Tradefy Protocol',
+          CFBundleURLSchemes: ['tradefy'],
+        },
+      ],
+      CFBundleDocumentTypes: [
+        {
+          CFBundleTypeName: 'Tradefy Strategy',
+          CFBundleTypeRole: 'Editor',
+          LSHandlerRank: 'Owner',
+          LSItemContentTypes: ['com.tradefy.tradestrategy'],
+        },
+      ],
+    },
   },
   rebuildConfig: {},
   makers: [

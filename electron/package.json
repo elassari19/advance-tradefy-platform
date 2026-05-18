@@ -47,6 +47,7 @@
     "wait-on": "^9.0.10"
   },
   "dependencies": {
-    "electron-squirrel-startup": "^1.0.1"
+    "electron-squirrel-startup": "^1.0.1",
+    "electron-updater": "^6.3.9"
   }
 }

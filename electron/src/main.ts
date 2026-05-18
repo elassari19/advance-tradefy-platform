@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, Menu, Notification, dialog, session } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, Notification, dialog, session, Tray, nativeImage, crashReporter } from 'electron';
 import path from 'path';
 import net from 'net';
+import { autoUpdater } from 'electron-updater';
 import started from 'electron-squirrel-startup';
 
 if (started) {
@@ -8,10 +9,71 @@ if (started) {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let aboutWindow: BrowserWindow | null = null;
 
 const isDev = !app.isPackaged;
 
-function createWindow() {
+// ── 9.7 Crash Reporter ──
+crashReporter.start({
+  productName: 'Tradefy',
+  companyName: 'Tradefy',
+  submitURL: '',
+  uploadToServer: false,
+});
+
+// ── 9.5 Deep Link Protocol ──
+const PROTOCOL = 'tradefy';
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL);
+}
+
+// ── Single instance + 9.4/9.5 File association / Deep link ──
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, argv) => {
+    const deepLink = argv.find(arg => arg.startsWith(`${PROTOCOL}://`));
+    const filePath = argv.find(arg => !arg.startsWith('-') && arg.endsWith('.tradestrategy'));
+
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+
+      if (deepLink) {
+        mainWindow.webContents.send('file:opened', deepLink);
+      } else if (filePath) {
+        mainWindow.webContents.send('file:opened', filePath);
+      }
+    }
+  });
+}
+
+// ── 9.4 macOS: file association open-file ──
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  if (mainWindow) {
+    mainWindow.webContents.send('file:opened', filePath);
+    mainWindow.focus();
+  }
+});
+
+// ── 9.5 macOS: deep link open-url ──
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  if (mainWindow) {
+    mainWindow.webContents.send('file:opened', url);
+    mainWindow.focus();
+  }
+});
+
+function createWindow(filePath?: string) {
+  // ── 9.1 Custom Titlebar ──
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 1000,
@@ -19,6 +81,8 @@ function createWindow() {
     minHeight: 700,
     title: 'Tradefy',
     backgroundColor: '#09090b',
+    frame: false,
+    titleBarStyle: 'hidden',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -34,9 +98,23 @@ function createWindow() {
     mainWindow.loadFile(path.join(process.resourcesPath, 'dist', 'index.html'));
   }
 
+  // ── 9.1 Track maximize state for custom titlebar ──
+  mainWindow.on('maximize', () => {
+    mainWindow?.webContents.send('window:maximized-changed', true);
+  });
+  mainWindow.on('unmaximize', () => {
+    mainWindow?.webContents.send('window:maximized-changed', false);
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  if (filePath) {
+    mainWindow.webContents.on('did-finish-load', () => {
+      mainWindow?.webContents.send('file:opened', filePath);
+    });
+  }
 }
 
 function createApplicationMenu() {
@@ -87,14 +165,7 @@ function createApplicationMenu() {
       submenu: [
         {
           label: 'About Tradefy',
-          click: () => {
-            dialog.showMessageBox(mainWindow!, {
-              type: 'info',
-              title: 'About Tradefy',
-              message: 'Tradefy',
-              detail: `Version ${app.getVersion()}\nTrading Terminal Desktop App`,
-            });
-          },
+          click: () => createAboutWindow(),
         },
       ],
     },
@@ -104,7 +175,10 @@ function createApplicationMenu() {
     template.unshift({
       label: app.getName(),
       submenu: [
-        { role: 'about' },
+        {
+          label: 'About Tradefy',
+          click: () => createAboutWindow(),
+        },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -118,6 +192,180 @@ function createApplicationMenu() {
   }
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// ── 9.2 System Tray ──
+function createTray() {
+  try {
+    const iconPath = path.join(__dirname, '..', 'build', 'icon.png');
+    const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+
+    if (trayIcon.isEmpty()) return;
+
+    tray = new Tray(trayIcon);
+    tray.setToolTip('Tradefy');
+
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'Show Tradefy',
+        click: () => {
+          if (mainWindow) {
+            mainWindow.show();
+            mainWindow.focus();
+          }
+        },
+      },
+      {
+        label: 'Hide Tradefy',
+        click: () => {
+          mainWindow?.hide();
+        },
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit',
+        click: () => {
+          app.quit();
+        },
+      },
+    ]);
+
+    tray.setContextMenu(contextMenu);
+
+    tray.on('click', () => {
+      if (mainWindow) {
+        if (mainWindow.isVisible()) {
+          mainWindow.focus();
+        } else {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    });
+  } catch {
+    // Tray not supported on this platform
+  }
+}
+
+// ── 9.6 About Window ──
+function createAboutWindow() {
+  if (aboutWindow) {
+    aboutWindow.focus();
+    return;
+  }
+
+  aboutWindow = new BrowserWindow({
+    width: 400,
+    height: 350,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    title: 'About Tradefy',
+    backgroundColor: '#09090b',
+    parent: mainWindow!,
+    modal: true,
+    frame: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const appVersion = app.getVersion();
+  const electronVersion = process.versions.electron;
+  const chromeVersion = process.versions.chrome;
+  const nodeVersion = process.versions.node;
+  const platform = process.platform;
+  const year = new Date().getFullYear();
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #09090b;
+      color: #e4e4e7;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      padding: 24px;
+      text-align: center;
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; color: #fafafa; }
+    .version { font-size: 13px; color: #a1a1aa; margin-bottom: 20px; }
+    .detail { font-size: 12px; color: #71717a; line-height: 1.8; }
+    .footer { margin-top: auto; font-size: 11px; color: #52525b; }
+  </style>
+</head>
+<body>
+  <h1>Tradefy</h1>
+  <div class="version">Version ${appVersion}</div>
+  <div class="detail">
+    Electron: ${electronVersion}<br>
+    Chrome: ${chromeVersion}<br>
+    Node.js: ${nodeVersion}<br>
+    Platform: ${platform}
+  </div>
+  <div class="footer">Copyright &copy; ${year}</div>
+</body>
+</html>`;
+
+  aboutWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+  aboutWindow.on('closed', () => {
+    aboutWindow = null;
+  });
+}
+
+// ── 9.3 Auto-Update ──
+function setupAutoUpdater() {
+  if (isDev) return;
+
+  autoUpdater.logger = console;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', (info) => {
+    dialog.showMessageBox(mainWindow!, {
+      type: 'info',
+      title: 'Update Available',
+      message: `Version ${info.version} is available.`,
+      detail: 'Would you like to download the update?',
+      buttons: ['Download', 'Later'],
+    }).then(({ response }) => {
+      if (response === 0) {
+        autoUpdater.downloadUpdate();
+      }
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    dialog.showMessageBox(mainWindow!, {
+      type: 'info',
+      title: 'Update Ready',
+      message: `Version ${info.version} has been downloaded.`,
+      detail: 'Restart the app to apply the update.',
+      buttons: ['Restart Now', 'Later'],
+    }).then(({ response }) => {
+      if (response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+
+  autoUpdater.on('error', (error) => {
+    console.error('Auto-updater error:', error);
+  });
+
+  autoUpdater.checkForUpdates().catch((err) => {
+    console.error('Auto-updater check failed:', err);
+  });
 }
 
 function registerIpcHandlers() {
@@ -180,6 +428,12 @@ function registerIpcHandlers() {
   ipcMain.on('window:close', () => {
     mainWindow?.close();
   });
+
+  // ── 9.1 Custom titlebar: query maximized state ──
+  ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized() ?? false);
+
+  // ── 9.6 Open About Window ──
+  ipcMain.handle('app:open-about', () => createAboutWindow());
 }
 
 async function checkBackend(): Promise<boolean> {
@@ -219,23 +473,13 @@ function setupCsp() {
   });
 }
 
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
-}
-
 app.whenReady().then(async () => {
   createWindow();
   createApplicationMenu();
   registerIpcHandlers();
   setupCsp();
+  createTray();
+  setupAutoUpdater();
 
   if (!await checkBackend()) {
     dialog.showMessageBox(mainWindow!, {

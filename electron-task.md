@@ -124,17 +124,17 @@
 
 ## Phase 9: Optional Enhancements
 
-- [ ] **9.1** Custom titlebar (`frame: false` + React Titlebar component)
-- [ ] **9.2** System tray icon with quick actions
-- [ ] **9.3** Auto-update via `electron-updater`
-  - [ ] macOS: code signing + notarization
-  - [ ] Windows: NSIS auto-updater
-  - [ ] Linux: AppImage update
-- [ ] **9.4** File association (`.tradestrategy` files open in app)
-- [ ] **9.5** Deep link support (`tradefy://`)
-- [ ] **9.6** About window with version info
-- [ ] **9.7** Crash reporter
+- [x] **9.1** Custom titlebar (`frame: false` + React Titlebar component)
+- [x] **9.2** System tray icon with quick actions
+- [x] **9.3** Auto-update via `electron-updater`
+  - [ ] macOS: code signing + notarization (requires Apple Developer account)
+  - [ ] Windows: NSIS auto-updater (requires Windows)
+  - [ ] Linux: AppImage update (requires Linux)
+- [x] **9.4** File association (`.tradestrategy` files open in app)
+- [x] **9.5** Deep link support (`tradefy://`)
+- [x] **9.6** About window with version info
+- [x] **9.7** Crash reporter
 
 ---
 
-**Total tasks:** 72 / **Core required:** 51 / **Optional:** 21 / **Completed:** 83 (incl. Phases 1–8)
+**Total tasks:** 72 / **Core required:** 51 / **Optional:** 21 / **Completed:** 89 (incl. Phases 1–9)

@@ -23,4 +23,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   maximizeWindow: () => ipcRenderer.send('window:maximize'),
   closeWindow: () => ipcRenderer.send('window:close'),
 
+  // ── 9.1 Custom Titlebar ──
+  isMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+  onMaximizedChanged: (callback: (maximized: boolean) => void) => {
+    ipcRenderer.on('window:maximized-changed', (_event, maximized) => callback(maximized));
+  },
+
+  // ── 9.6 About Window ──
+  openAbout: () => ipcRenderer.invoke('app:open-about'),
+
+  // ── 9.4/9.5 File opened via file association or deep link ──
+  onOpenFile: (callback: (filePath: string) => void) => {
+    ipcRenderer.on('file:opened', (_event, filePath) => callback(filePath));
+  },
 });
