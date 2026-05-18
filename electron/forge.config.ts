@@ -15,6 +15,7 @@ const config: ForgeConfig = {
     executableName: 'Tradefy',
     appCopyright: 'Copyright © 2024',
     appCategoryType: 'public.app-category.finance',
+    icon: './build/icon',
     extraResource: ['../frontend/dist'],
     osxSign: {},
     osxNotarize: undefined,

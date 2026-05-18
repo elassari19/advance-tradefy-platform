@@ -23,6 +23,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
   maximizeWindow: () => ipcRenderer.send('window:maximize'),
   closeWindow: () => ipcRenderer.send('window:close'),
 
-  onOpenFile: (callback: (filePath: string) => void) =>
-    ipcRenderer.on('file:opened', (_event, filePath) => callback(filePath)),
 });

@@ -10,7 +10,6 @@ interface ElectronAPI {
   minimizeWindow: () => void;
   maximizeWindow: () => void;
   closeWindow: () => void;
-  onOpenFile: (callback: (filePath: string) => void) => void;
 }
 
 declare global {

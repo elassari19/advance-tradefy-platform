@@ -210,7 +210,9 @@ function setupCsp() {
           "style-src 'self' 'unsafe-inline'; " +
           "connect-src 'self' http://127.0.0.1:3000 ws://127.0.0.1:3000; " +
           "img-src 'self' data:; " +
-          "font-src 'self' data:;",
+          "font-src 'self' data:; " +
+          "worker-src 'self' blob:; " +
+          "child-src 'self' blob:;",
         ],
       },
     });
