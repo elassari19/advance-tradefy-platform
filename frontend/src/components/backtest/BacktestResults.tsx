@@ -104,19 +104,27 @@ export const BacktestResults: React.FC<BacktestResultsProps> = ({ result, onSave
     }
   };
 
-  const exportCSV = () => {
+  const exportCSV = async () => {
     const headers = '#,Side,Entry,Exit,PnL,PnL%,Reason,Duration';
     const rows = trades.map((t, i) =>
       `${i + 1},${t.side},${t.entry_price},${t.exit_price},${t.pnl.toFixed(2)},${t.pnl_pct.toFixed(2)},${t.exit_reason},${t.holding_bars}`
     );
     const csv = [headers, ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'backtest_trades.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    if (window.electronAPI) {
+      await window.electronAPI.saveFile({
+        defaultPath: `backtest_trades.csv`,
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+        content: csv,
+      });
+    } else {
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'backtest_trades.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   };
 
   const isProfitable = summary.net_profit >= 0;

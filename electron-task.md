@@ -63,15 +63,15 @@
 
 ## Phase 5: Frontend Integration
 
-- [ ] **5.1** Update `App.tsx` — notifications
-  - [ ] Replace browser `Notification` API with `window.electronAPI?.showNotification()`
-  - [ ] Keep fallback for web
-- [ ] **5.2** Update `BacktestResults.tsx` — CSV export
-  - [ ] Use `window.electronAPI?.saveFile()` instead of blob + anchor click
-- [ ] **5.3** Update `CodeEditor.tsx` — file open/save for strategy `.py` files
-  - [ ] Export strategy code via native save dialog
-  - [ ] Import strategy code via native open dialog
-- [ ] **5.4** Update `JsStrategyEditor.tsx` — same file open/save for `.js` files
+- [x] **5.1** Update `App.tsx` — notifications
+  - [x] Replace browser `Notification` API with `window.electronAPI?.showNotification()`
+  - [x] Keep fallback for web
+- [x] **5.2** Update `BacktestResults.tsx` — CSV export
+  - [x] Use `window.electronAPI?.saveFile()` instead of blob + anchor click
+- [x] **5.3** Update `CodeEditor.tsx` — file open/save for strategy `.py` files
+  - [x] Export strategy code via native save dialog
+  - [x] Import strategy code via native open dialog
+- [x] **5.4** Update `JsStrategyEditor.tsx` — same file open/save for `.js` files
 
 ## Phase 6: Monaco Editor in Electron
 

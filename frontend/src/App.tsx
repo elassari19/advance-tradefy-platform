@@ -126,29 +126,30 @@ export function App() {
         try {
           const data: TriggeredAlert = JSON.parse(event.data);
           
-          // Browser Notification
-          if ('Notification' in window && Notification.permission === 'granted') {
-            if (!notificationSent.has(data.rule_id + data.timestamp)) {
+          if (!notificationSent.has(data.rule_id + data.timestamp)) {
+            if (window.electronAPI) {
+              window.electronAPI.showNotification(`Alert: ${data.rule_name}`, data.message);
+            } else if ('Notification' in window && Notification.permission === 'granted') {
               new Notification(`Alert: ${data.rule_name}`, {
                 body: data.message,
                 icon: '/vite.svg',
               });
-              setNotificationSent(prev => new Set(prev).add(data.rule_id + data.timestamp));
-
-              // Play alert sound
-              try {
-                const audioCtx = new AudioContext();
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                osc.frequency.value = 880;
-                gain.gain.value = 0.3;
-                osc.start();
-                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-                osc.stop(audioCtx.currentTime + 0.5);
-              } catch {}
             }
+            setNotificationSent(prev => new Set(prev).add(data.rule_id + data.timestamp));
+
+            // Play alert sound
+            try {
+              const audioCtx = new AudioContext();
+              const osc = audioCtx.createOscillator();
+              const gain = audioCtx.createGain();
+              osc.connect(gain);
+              gain.connect(audioCtx.destination);
+              osc.frequency.value = 880;
+              gain.gain.value = 0.3;
+              osc.start();
+              gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+              osc.stop(audioCtx.currentTime + 0.5);
+            } catch {}
           }
         } catch {}
       };
@@ -170,9 +171,9 @@ export function App() {
     };
   }, [view, notificationSent]);
 
-  // ── Request notification permission ──
+  // ── Request notification permission (web only) ──
   useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
+    if (!window.electronAPI && 'Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
   }, []);

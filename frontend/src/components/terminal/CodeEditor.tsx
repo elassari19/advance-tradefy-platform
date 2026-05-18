@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
-import { Play, CheckCircle, AlertCircle, Loader2, Trash2, Save, FolderOpen } from 'lucide-react';
+import { Play, CheckCircle, AlertCircle, Loader2, Trash2, Save, FolderOpen, Download, Upload } from 'lucide-react';
 
 interface CodeEditorProps {
   symbol: string;
@@ -174,6 +174,33 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ symbol, code, isActive, 
     setShowSavePrompt(true);
   };
 
+  const handleExport = async () => {
+    if (!window.electronAPI) return;
+    const filePath = await window.electronAPI.saveFile({
+      defaultPath: `${symbol.replace('/', '_')}_strategy.py`,
+      filters: [{ name: 'Python', extensions: ['py'] }],
+      content: code,
+    });
+    if (filePath) {
+      setStatus('success');
+      setMessage(`Exported to ${filePath}`);
+      setTimeout(() => setStatus('idle'), 3000);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!window.electronAPI) return;
+    const result = await window.electronAPI.openFile({
+      filters: [{ name: 'Python', extensions: ['py'] }],
+    });
+    if (result) {
+      onCodeChange(result.content);
+      setStatus('success');
+      setMessage(`Imported ${result.filePath}`);
+      setTimeout(() => setStatus('idle'), 3000);
+    }
+  };
+
   const handleSaveConfirm = async () => {
     if (!onSave || !saveName.trim()) return;
     setShowSavePrompt(false);
@@ -200,6 +227,24 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ symbol, code, isActive, 
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {window.electronAPI && (
+            <>
+              <button
+                onClick={handleImport}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-all"
+              >
+                <Upload size={12} />
+                Import
+              </button>
+              <button
+                onClick={handleExport}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-all"
+              >
+                <Download size={12} />
+                Export
+              </button>
+            </>
+          )}
           {onLoad && (
             <button
               onClick={onLoad}
