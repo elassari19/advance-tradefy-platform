@@ -1,4 +1,5 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
+import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDeb } from '@electron-forge/maker-deb';
@@ -10,10 +11,20 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    name: 'Tradefy',
+    executableName: 'Tradefy',
+    appCopyright: 'Copyright © 2024',
+    appCategoryType: 'public.app-category.finance',
     extraResource: ['../frontend/dist'],
+    osxSign: {},
+    osxNotarize: undefined,
   },
   rebuildConfig: {},
   makers: [
+    new MakerDMG({
+      format: 'ULFO',
+      overwrite: true,
+    }),
     new MakerSquirrel({}),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({}),

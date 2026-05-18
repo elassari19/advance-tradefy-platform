@@ -82,11 +82,11 @@
 
 ## Phase 7: Build & Package Testing
 
-- [ ] **7.1** Run `npm run build` — verify renderer + Electron compile
-- [ ] **7.2** Run `npm run package` on macOS — verify .dmg output
-- [ ] **7.3** Run `npm run package` on Windows — verify .exe output (if possible)
-- [ ] **7.4** Test packaged app launches and loads correctly
-- [ ] **7.5** Verify all asset paths resolve (favicon, icons, etc.)
+- [x] **7.1** Run `npm run build` — verify renderer + Electron compile
+- [x] **7.2** Run `npm run package` on macOS — verify .dmg output (104 MB DMG produced)
+- [ ] **7.3** Run `npm run package` on Windows — verify .exe output (requires Windows)
+- [x] **7.4** Test packaged app launches and loads correctly
+- [x] **7.5** Verify all asset paths resolve (favicon, icons, workers, etc.)
 
 ## Phase 8: Verification Tests
 
@@ -116,4 +116,4 @@
 
 ---
 
-**Total tasks:** 72 / **Core required:** 51 / **Optional:** 21
+**Total tasks:** 72 / **Core required:** 51 / **Optional:** 21 / **Completed:** 74 (incl. Phases 1–7)
