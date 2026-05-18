@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Loader2, AlertCircle } from 'lucide-react';
+import { Play, Loader2, FolderOpen, FileCode } from 'lucide-react';
 import type { BacktestRequest } from '../../hooks/useBacktest';
 
 const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT', 'ADA/USDT', 'DOGE/USDT', 'DOT/USDT'];
@@ -9,9 +9,10 @@ interface BacktestConfigProps {
   strategyCode: string;
   onRun: (req: BacktestRequest) => void;
   running: boolean;
+  onLoadStrategy: () => void;
 }
 
-export const BacktestConfig: React.FC<BacktestConfigProps> = ({ strategyCode, onRun, running }) => {
+export const BacktestConfig: React.FC<BacktestConfigProps> = ({ strategyCode, onRun, running, onLoadStrategy }) => {
   const now = new Date();
   const defaultEnd = now.toISOString().split('T')[0];
   const defaultStart = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -39,79 +40,100 @@ export const BacktestConfig: React.FC<BacktestConfigProps> = ({ strategyCode, on
     });
   };
 
+  const strategyLabel = strategyCode.trim().split('\n')[0]?.replace(/^#\s*/, '') || 'Untitled Strategy';
+  const isDefault = strategyCode === '# Write your strategy here...\n\ndef on_tick(price, candles):\n    pass';
+
   return (
     <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-4 space-y-4">
-      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">Backtest Settings</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">Backtest Settings</h3>
+        <button
+          onClick={onLoadStrategy}
+          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold text-zinc-400 hover:text-zinc-200 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 transition-all"
+        >
+          <FolderOpen size={12} />
+          Browse Strategies
+        </button>
+      </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">Symbol</label>
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-2.5 flex items-center gap-3">
+        <FileCode size={14} className="text-zinc-500 shrink-0" />
+        <span className="text-xs text-zinc-400 font-mono truncate flex-1">
+          {isDefault ? 'No strategy selected' : strategyLabel}
+        </span>
+        <span className="text-[10px] text-zinc-600 font-mono shrink-0">
+          {strategyCode.length} chars
+        </span>
+      </div>
+
+      <div className="grid grid-cols-7 gap-2">
+        <div className="col-span-1">
+          <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">Symbol</label>
           <select
             value={symbol}
             onChange={e => setSymbol(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs text-zinc-200 font-mono"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-200 font-mono"
           >
             {SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">Timeframe</label>
+        <div className="col-span-1">
+          <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">TF</label>
           <select
             value={timeframe}
             onChange={e => setTimeframe(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs text-zinc-200 font-mono"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-200 font-mono"
           >
             {TIMEFRAMES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">From</label>
+        <div className="col-span-1">
+          <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">From</label>
           <input
             type="date"
             value={startDate}
             onChange={e => setStartDate(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs text-zinc-200 font-mono"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-200 font-mono"
           />
         </div>
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">To</label>
+        <div className="col-span-1">
+          <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">To</label>
           <input
             type="date"
             value={endDate}
             onChange={e => setEndDate(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs text-zinc-200 font-mono"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-200 font-mono"
           />
         </div>
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">Initial Capital ($)</label>
+        <div className="col-span-1">
+          <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">Capital</label>
           <input
             type="number"
             value={initialCapital}
             onChange={e => setInitialCapital(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs text-zinc-200 font-mono"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-200 font-mono"
           />
         </div>
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">Commission (%)</label>
+        <div className="col-span-1">
+          <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">Comm.</label>
           <input
             type="number"
             value={commission}
             onChange={e => setCommission(e.target.value)}
             step="0.01"
-            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs text-zinc-200 font-mono"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-200 font-mono"
           />
         </div>
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">Slippage (%)</label>
+        <div className="col-span-1">
+          <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">Slip.</label>
           <input
             type="number"
             value={slippage}
             onChange={e => setSlippage(e.target.value)}
             step="0.001"
-            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs text-zinc-200 font-mono"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-[10px] text-zinc-200 font-mono"
           />
         </div>
-        <div />
       </div>
 
       <button

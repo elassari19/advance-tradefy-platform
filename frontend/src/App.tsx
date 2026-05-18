@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { X, Plus, ChevronDown, BarChart3, FlaskConical, AlertTriangle } from "lucide-react";
 import { useMarketDataForSymbol } from "./hooks/useMarketData";
 import { useSimulator } from "./hooks/useSimulator";
@@ -67,6 +67,9 @@ export function App() {
   const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
   const [showStrategyBrowser, setShowStrategyBrowser] = useState(false);
   const [optimizeOpen, setOptimizeOpen] = useState(false);
+  const [backtestPanelHeight, setBacktestPanelHeight] = useState(360);
+  const resizeRef = useRef(false);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [toasts, setToasts] = useState<Array<{id: string; message: string; type: 'error' | 'success' | 'info'}>>([]);
   const [showBacktestOverlay, setShowBacktestOverlay] = useState(false);
@@ -323,6 +326,29 @@ export function App() {
     });
   }, [activeSymbol]);
 
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizeRef.current = true;
+    const startY = e.clientY;
+    const startHeight = backtestPanelHeight;
+
+    const onMouseMove = (me: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const delta = startY - me.clientY;
+      const newHeight = Math.min(Math.max(startHeight + delta, 200), window.innerHeight - 200);
+      setBacktestPanelHeight(newHeight);
+    };
+
+    const onMouseUp = () => {
+      resizeRef.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [backtestPanelHeight]);
+
   const handleSaveWebhooks = async (newWebhooks: WebhookConfig[]) => {
     await saveWebhooks(newWebhooks);
     setWebhooks(newWebhooks);
@@ -504,12 +530,34 @@ export function App() {
       )}
 
       {view === 'backtest' && (
-        <div className="h-[calc(100vh-56px)] grid grid-cols-[360px_1fr] overflow-hidden">
-          <div className="overflow-y-auto border-r border-zinc-800 p-4 space-y-4">
+        <div className="h-[calc(100vh-56px)] flex flex-col overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-y-auto p-4">
+            {backtestResult ? (
+              <BacktestResults result={backtestResult} onSave={handleBacktestSave} onShowOnChart={() => { setView('trade'); setShowBacktestOverlay(true); }} />
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-center p-8">
+                <FlaskConical size={64} className="text-zinc-600 mb-4" />
+                <h2 className="text-xl font-bold text-white mb-2">Backtest</h2>
+                <p className="text-zinc-400 max-w-md text-sm">
+                  Configure your backtest settings below and click <span className="text-blue-400 font-bold">Run Backtest</span> to simulate your strategy against historical market data.
+                </p>
+              </div>
+            )}
+          </div>
+          <div
+            onMouseDown={handleResizeStart}
+            className="shrink-0 h-2 cursor-row-resize bg-zinc-800 hover:bg-blue-600/50 transition-colors relative z-10 border-y border-zinc-700/50"
+          />
+          <div
+            ref={panelRef}
+            className="shrink-0 overflow-y-auto border-t border-zinc-800 p-4 space-y-4 bg-[#09090b]"
+            style={{ height: backtestPanelHeight }}
+          >
             <BacktestConfig
               strategyCode={currentStrategyCode}
               onRun={handleBacktestRun}
               running={backtestRunning}
+              onLoadStrategy={handleLoadStrategy}
             />
             <button
               onClick={() => setOptimizeOpen(!optimizeOpen)}
@@ -540,19 +588,6 @@ export function App() {
                 <pre className="text-[10px] text-zinc-400 font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
                   {currentStrategyCode}
                 </pre>
-              </div>
-            )}
-          </div>
-          <div className="overflow-y-auto p-4">
-            {backtestResult ? (
-              <BacktestResults result={backtestResult} onSave={handleBacktestSave} onShowOnChart={() => { setView('trade'); setShowBacktestOverlay(true); }} />
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8">
-                <FlaskConical size={64} className="text-zinc-600 mb-4" />
-                <h2 className="text-xl font-bold text-white mb-2">Backtest</h2>
-                <p className="text-zinc-400 max-w-md text-sm">
-                  Configure your backtest settings on the left and click <span className="text-blue-400 font-bold">Run Backtest</span> to simulate your strategy against historical market data.
-                </p>
               </div>
             )}
           </div>
