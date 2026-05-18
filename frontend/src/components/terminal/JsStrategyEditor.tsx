@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import { Play, CheckCircle, AlertCircle, Loader2, Download, Upload } from 'lucide-react';
+import '../../utils/monaco-setup';
 import { useJsStrategy } from '../../hooks/useJsStrategy';
 import { useMarketDataForSymbol } from '../../hooks/useMarketData';
 import type { Candle } from '../../hooks/useMarketData';
@@ -147,6 +148,7 @@ export const JsStrategyEditor: React.FC<JsStrategyEditorProps> = ({ symbol }) =>
           )}
           {status === 'loading' ? 'Running...' : status === 'success' ? 'Done' : status === 'error' ? 'Error' : 'Run Strategy'}
         </button>
+      </div>
       </div>
 
       <div className="flex-1 min-h-[300px]">

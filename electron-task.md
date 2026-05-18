@@ -75,10 +75,10 @@
 
 ## Phase 6: Monaco Editor in Electron
 
-- [ ] **6.1** Install `vite-plugin-monaco-editor` devDep
-- [ ] **6.2** Update `frontend/vite.config.ts` to include Monaco worker plugin
-- [ ] **6.3** Configure `@monaco-editor/react` loader to use bundled workers (no CDN)
-- [ ] **6.4** Verify Monaco loads in production build without network requests
+- [x] **6.1** Install `monaco-editor` dependency (used Vite `?worker` instead of incompatible `vite-plugin-monaco-editor`)
+- [x] **6.2** Create `frontend/src/utils/monaco-setup.ts` with Vite-native `?worker` imports
+- [x] **6.3** Configure `@monaco-editor/react` loader to use bundled workers (no CDN)
+- [x] **6.4** Verify Monaco loads in production build without network requests
 
 ## Phase 7: Build & Package Testing
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import { Play, CheckCircle, AlertCircle, Loader2, Trash2, Save, FolderOpen, Download, Upload } from 'lucide-react';
+import '../../utils/monaco-setup';
 
 interface CodeEditorProps {
   symbol: string;
