@@ -4,7 +4,7 @@ import { X, Plus, ChevronDown, BarChart3, FlaskConical, AlertTriangle, Loader2, 
 import { useMarketDataForSymbol } from "./hooks/useMarketData";
 import { useSimulator } from "./hooks/useSimulator";
 import { useBacktest } from "./hooks/useBacktest";
-import { Chart } from "./components/Chart";
+import { Chart, type Drawing } from "./components/Chart";
 import { OrderPanel } from "./components/order/OrderPanel";
 import { TerminalTabs } from "./components/terminal/TerminalTabs";
 import { Header } from "./components/layout/Header";
@@ -24,6 +24,8 @@ import { TesterReport } from "./components/backtest/TesterReport";
 import { TesterJournal } from "./components/backtest/TesterJournal";
 import { TesterToolbar } from "./components/backtest/TesterToolbar";
 import { VisualBacktestChart } from "./components/backtest/VisualBacktestChart";
+import { DrawingToolbar } from "./components/DrawingToolbar";
+import type { DrawingTool } from "./components/DrawingToolbar";
 import type { WebhookConfig } from "./hooks/useSimulator";
 import type { IndicatorConfig, CustomIndicatorDef } from "./utils/indicators";
 import type { BacktestResult, BacktestRequest, BacktestTrade, BacktestEvent, TestingMode, BacktestProgress } from "./hooks/useBacktest";
@@ -122,6 +124,8 @@ export function App() {
   const [toasts, setToasts] = useState<Array<{id: string; message: string; type: 'error' | 'success' | 'info'}>>([]);
   const [showBacktestOverlay, setShowBacktestOverlay] = useState(false);
   const [orderPanelOpen, setOrderPanelOpen] = useState(true);
+  const [drawingTool, setDrawingTool] = useState<DrawingTool>('pointer');
+  const [drawings, setDrawings] = useState<Drawing[]>([]);
   const backtestTradesRef = useRef<BacktestTrade[]>([]);
   const [backtestTradesState, setBacktestTradesState] = useState<BacktestTrade[]>([]);
   const [backtestLiveMode, setBacktestLiveMode] = useState(false);
@@ -708,7 +712,12 @@ export function App() {
 
             <div className="flex-1 min-h-0 flex flex-col">
               <div className="flex-1 min-h-0 flex">
-                <div className="flex-1 min-h-0">
+                <div className="flex-1 min-h-0 relative">
+                  <DrawingToolbar
+                    activeTool={drawingTool}
+                    onToolChange={setDrawingTool}
+                    onClearAll={() => setDrawings([])}
+                  />
                   <TabChart
                     key={activeSymbol}
                     symbol={activeSymbol}
@@ -721,6 +730,9 @@ export function App() {
                   backtestCursorTime={backtestCursorTime}
                     showBacktestOverlay={showBacktestOverlay}
                     backtestCursorTime={backtestCursorTime}
+                    drawingTool={drawingTool}
+                    drawings={drawings}
+                    onDrawingsChange={setDrawings}
                   />
                 </div>
 
@@ -1033,6 +1045,9 @@ function TabChart({
   backtestTrades,
   showBacktestOverlay,
   backtestCursorTime,
+  drawingTool,
+  drawings,
+  onDrawingsChange,
 }: {
   symbol: string;
   timeframe: number;
@@ -1043,6 +1058,9 @@ function TabChart({
   backtestTrades?: BacktestTrade[];
   showBacktestOverlay?: boolean;
   backtestCursorTime?: number;
+  drawingTool?: DrawingTool;
+  drawings?: Drawing[];
+  onDrawingsChange?: (drawings: Drawing[]) => void;
 }) {
   const { candles, isInitializing } = useMarketDataForSymbol(symbol, timeframe);
 
@@ -1067,6 +1085,9 @@ function TabChart({
       backtestTrades={backtestTrades}
       showBacktestOverlay={showBacktestOverlay}
       backtestCursorTime={backtestCursorTime}
+      drawingTool={drawingTool}
+      drawings={drawings}
+      onDrawingsChange={onDrawingsChange}
     />
   );
 }

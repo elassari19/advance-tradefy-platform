@@ -1,13 +1,26 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import { createChart, ColorType, AreaSeries, LineSeries, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
-import type { IChartApi, ISeriesApi, IPriceLine, ISeriesPrimitive } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, IPriceLine, ISeriesPrimitive, Time } from 'lightweight-charts';
 import type { Candle } from '../hooks/useMarketData';
 import type { Position } from '../hooks/useSimulator';
 import type { IndicatorConfig } from '../utils/indicators';
 import { batchEvaluateIndicators } from '../utils/indicators';
 import type { BacktestTrade } from '../hooks/useBacktest';
+import type { DrawingTool } from './DrawingToolbar';
 
 type ChartType = 'area' | 'line' | 'candle';
+
+interface DrawingPoint {
+  time: number;
+  price: number;
+}
+
+export interface Drawing {
+  id: string;
+  type: 'trend-line' | 'horizontal-line' | 'rectangle';
+  points: DrawingPoint[];
+  color: string;
+}
 
 interface BacktestTradeMarker {
   time: number;
@@ -25,11 +38,96 @@ interface ChartProps {
   backtestTrades?: BacktestTrade[];
   showBacktestOverlay?: boolean;
   backtestCursorTime?: number;
+  drawingTool?: DrawingTool;
+  drawings?: Drawing[];
+  onDrawingsChange?: (drawings: Drawing[]) => void;
 }
 
 const SUB_CHART_HEIGHT = 130;
 
-export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePosition, chartType, indicatorConfigs, backtestTrades, showBacktestOverlay, backtestCursorTime }) => {
+const DrawingsLayer: React.FC<{
+  drawings: Drawing[];
+  pendingPoints: DrawingPoint[];
+  activeTool: DrawingTool;
+  mainChartRef: React.RefObject<IChartApi | null>;
+  activeSeriesRef: React.RefObject<ISeriesApi<any> | null>;
+}> = ({ drawings, pendingPoints, activeTool, mainChartRef, activeSeriesRef }) => {
+  const [, forceRender] = useState(0);
+  const chart = mainChartRef.current;
+  const series = activeSeriesRef.current;
+
+  useEffect(() => {
+    if (!chart) return;
+    const handler = () => forceRender(n => n + 1);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
+    return () => chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
+  }, [chart]);
+
+  if (!chart || !series) return null;
+
+  const elements: React.ReactNode[] = [];
+  const w = 1.5;
+  const op = 1;
+
+  for (const d of drawings) {
+    if (d.type === 'horizontal-line') {
+      const y = series.priceToCoordinate(d.points[0].price);
+      if (y === null) continue;
+      elements.push(
+        <div key={d.id} className="absolute left-0 right-0" style={{ top: y, height: w, background: d.color, opacity: op }} />
+      );
+    } else if (d.type === 'trend-line' && d.points.length >= 2) {
+      const x1 = chart.timeScale().timeToCoordinate(d.points[0].time as Time);
+      const y1 = series.priceToCoordinate(d.points[0].price);
+      const x2 = chart.timeScale().timeToCoordinate(d.points[1].time as Time);
+      const y2 = series.priceToCoordinate(d.points[1].price);
+      if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+      elements.push(
+        <div key={d.id} className="absolute" style={{ left: x1, top: y1, width: len, height: w, background: d.color, opacity: op, transformOrigin: '0 0', transform: `rotate(${angle}deg)` }} />
+      );
+    } else if (d.type === 'rectangle' && d.points.length >= 2) {
+      const x1 = chart.timeScale().timeToCoordinate(d.points[0].time as Time);
+      const y1 = series.priceToCoordinate(d.points[0].price);
+      const x2 = chart.timeScale().timeToCoordinate(d.points[1].time as Time);
+      const y2 = series.priceToCoordinate(d.points[1].price);
+      if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
+      elements.push(
+        <div key={d.id} className="absolute" style={{ left: Math.min(x1, x2), top: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1), border: `${w}px dashed ${d.color}`, opacity: op }} />
+      );
+    }
+  }
+
+  // Preview
+  if (pendingPoints.length >= 2 && (activeTool === 'trend-line' || activeTool === 'rectangle')) {
+    const x1 = chart.timeScale().timeToCoordinate(pendingPoints[0].time as Time);
+    const y1 = series.priceToCoordinate(pendingPoints[0].price);
+    const x2 = chart.timeScale().timeToCoordinate(pendingPoints[1].time as Time);
+    const y2 = series.priceToCoordinate(pendingPoints[1].price);
+    if (!(x1 === null || y1 === null || x2 === null || y2 === null)) {
+      if (activeTool === 'trend-line') {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+        elements.push(
+          <div key="preview" className="absolute" style={{ left: x1, top: y1, width: len, height: 1, background: '#3b82f6', opacity: 0.6, transformOrigin: '0 0', transform: `rotate(${angle}deg)` }} />
+        );
+      } else {
+        elements.push(
+          <div key="preview" className="absolute" style={{ left: Math.min(x1, x2), top: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1), border: '1px dashed #8b5cf6', opacity: 0.6 }} />
+        );
+      }
+    }
+  }
+
+  return <>{elements}</>;
+};
+
+export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePosition, chartType, indicatorConfigs, backtestTrades, showBacktestOverlay, backtestCursorTime, drawingTool = 'pointer', drawings: externalDrawings, onDrawingsChange }) => {
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const mainChartRef = useRef<IChartApi | null>(null);
   const areaSeriesRef = useRef<ISeriesApi<'Area'> | null>(null);
@@ -44,6 +142,29 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
   const isSyncingRef = useRef(false);
   const tradeMarkerPriceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
   const cursorRef = useRef<HTMLDivElement>(null);
+  const chartWrapperRef = useRef<HTMLDivElement>(null);
+
+  const [internalDrawings, setInternalDrawings] = useState<Drawing[]>([]);
+  const [pendingPoints, setPendingPoints] = useState<DrawingPoint[]>([]);
+  const [overlayTick, setOverlayTick] = useState(0);
+  const pendingRef = useRef<DrawingPoint[]>([]);
+
+  const drawings = externalDrawings ?? internalDrawings;
+  const setDrawings = onDrawingsChange ? (d: Drawing[]) => { setInternalDrawings(d); onDrawingsChange(d); } : setInternalDrawings;
+
+  const drawingToolRef = useRef(drawingTool);
+  drawingToolRef.current = drawingTool;
+  const drawingsRef = useRef(drawings);
+  drawingsRef.current = drawings;
+  const setDrawingsFnRef = useRef(setDrawings);
+  setDrawingsFnRef.current = setDrawings;
+
+  useEffect(() => {
+    if (drawingTool === 'pointer') {
+      pendingRef.current = [];
+      setPendingPoints([]);
+    }
+  }, [drawingTool]);
 
   const subContainerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const subChartRefs = useRef<Map<string, IChartApi>>(new Map());
@@ -111,7 +232,55 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
     });
     resizeObserver.observe(container);
 
+    const toTimePrice = (clientX: number, clientY: number): { time: number; price: number } | null => {
+      if (!activeSeriesRef.current || !mainChartRef.current) return null;
+      const rect = container.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      const time = mainChartRef.current.timeScale().coordinateToTime(x);
+      const price = activeSeriesRef.current.coordinateToPrice(y);
+      if (time === null || price === null) return null;
+      return { time: time as number, price };
+    };
+
+    const handleDrawingClick = (e: MouseEvent) => {
+      const tp = toTimePrice(e.clientX, e.clientY);
+      if (!tp) return;
+      const tool = drawingToolRef.current;
+      const currentDrawings = drawingsRef.current;
+      const saveDrawings = setDrawingsFnRef.current;
+      if (tool === 'horizontal-line') {
+        const newDrawing: Drawing = {
+          id: `drawing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          type: 'horizontal-line',
+          points: [{ time: tp.time, price: tp.price }],
+          color: '#3b82f6',
+        };
+        saveDrawings([...currentDrawings, newDrawing]);
+      } else if (tool === 'trend-line' || tool === 'rectangle') {
+        const pending = pendingRef.current;
+        if (pending.length === 0) {
+          pendingRef.current = [tp];
+          setPendingPoints([tp]);
+        } else {
+          const complete: Drawing = {
+            id: `drawing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            type: tool,
+            points: [pending[0], tp],
+            color: tool === 'trend-line' ? '#3b82f6' : '#8b5cf6',
+          };
+          pendingRef.current = [];
+          setPendingPoints([]);
+          saveDrawings([...currentDrawings, complete]);
+        }
+      }
+    };
+
     const onMouseDown = (e: MouseEvent) => {
+      if (drawingToolRef.current !== 'pointer') {
+        handleDrawingClick(e);
+        return;
+      }
       if (!activeSeriesRef.current || !mainChartRef.current) return;
       const rect = container.getBoundingClientRect();
       const y = e.clientY - rect.top;
@@ -135,6 +304,13 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
     };
 
     const onMouseMove = (e: MouseEvent) => {
+      if (drawingToolRef.current !== 'pointer' && pendingRef.current.length === 1) {
+        const tp = toTimePrice(e.clientX, e.clientY);
+        if (tp) {
+          setPendingPoints([pendingRef.current[0], tp]);
+        }
+        return;
+      }
       if (!draggingRef.current || !activeSeriesRef.current) return;
       const rect = container.getBoundingClientRect();
       const y = e.clientY - rect.top;
@@ -160,19 +336,37 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
       }
     };
 
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && pendingRef.current.length > 0) {
+        pendingRef.current = [];
+        setPendingPoints([]);
+      }
+    };
+
     container.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('keydown', handleKeyDown);
 
     return () => {
       resizeObserver.disconnect();
       container.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('keydown', handleKeyDown);
       chart.remove();
       mainChartRef.current = null;
     };
   }, [onUpdatePosition]);
+
+  // ─── Overlay re-render on chart scroll/zoom ──────────
+  useEffect(() => {
+    const chart = mainChartRef.current;
+    if (!chart) return;
+    const handler = () => setOverlayTick(t => t + 1);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
+    return () => chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
+  }, []);
 
   // ─── Sub Charts ───────────────────────────────────────
   useEffect(() => {
@@ -562,10 +756,19 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
 
   return (
     <div className="w-full h-full relative cursor-crosshair flex flex-col">
-      <div ref={mainContainerRef} className="flex-1 min-h-0" />
-      {backtestCursorTime != null && (
-        <div ref={cursorRef} className="absolute top-0 bottom-0 w-[2px] bg-blue-500/60 pointer-events-none z-10" style={{ left: 0 }} />
-      )}
+      <div ref={mainContainerRef} className="relative flex-1 min-h-0" />
+      <div className="absolute inset-0 z-20 pointer-events-none" style={{ top: 0, left: 0 }}>
+        <DrawingsLayer
+          drawings={drawings}
+          pendingPoints={pendingPoints}
+          activeTool={drawingTool}
+          mainChartRef={mainChartRef}
+          activeSeriesRef={activeSeriesRef}
+        />
+        {backtestCursorTime != null && (
+          <div ref={cursorRef} className="absolute top-0 bottom-0 w-[2px] bg-blue-500/60 pointer-events-none z-10" style={{ left: 0 }} />
+        )}
+      </div>
       {subChartKeys.map((key, idx) => (
         <React.Fragment key={key}>
           <div className={idx === 0 ? 'h-px bg-zinc-800 shrink-0' : ''} />
