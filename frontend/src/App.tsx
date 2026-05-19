@@ -25,13 +25,15 @@ import { TesterJournal } from "./components/backtest/TesterJournal";
 import { TesterToolbar } from "./components/backtest/TesterToolbar";
 import { VisualBacktestChart } from "./components/backtest/VisualBacktestChart";
 import { DrawingToolbar } from "./components/DrawingToolbar";
+import { PlatformsPage } from "./components/platforms/PlatformsPage";
 import type { DrawingTool } from "./components/DrawingToolbar";
 import type { WebhookConfig } from "./hooks/useSimulator";
+import type { PlatformConnection } from "./types/platforms";
 import type { IndicatorConfig, CustomIndicatorDef } from "./utils/indicators";
 import type { BacktestResult, BacktestRequest, BacktestTrade, BacktestEvent, TestingMode, BacktestProgress } from "./hooks/useBacktest";
 import type { AlertRule, TriggeredAlert, WebhookLog } from "./hooks/useSimulator";
 
-type View = 'trade' | 'backtest' | 'script' | 'alerts';
+type View = 'trade' | 'backtest' | 'script' | 'alerts' | 'platforms';
 type ChartType = 'area' | 'line' | 'candle';
 
 const DEFAULT_STRATEGY_CODE = '# Write your strategy here...\n\ndef on_tick(price, candles):\n    pass';
@@ -212,11 +214,119 @@ export function App() {
     fetchActiveStrategies().then(setActiveStrategySymbols).catch(console.error);
   }, [fetchWebhooks, fetchActiveStrategies]);
 
+  // ── Platform Connections State ──
+  const [platformConnections, setPlatformConnections] = useState<PlatformConnection[]>([]);
+  const [testingConnectionId, setTestingConnectionId] = useState<string | null>(null);
+
+  const handleSavePlatformConnection = useCallback(async (connection: Partial<PlatformConnection>) => {
+    const existing = connection.id ? platformConnections.find(c => c.id === connection.id) : null;
+
+    if (existing) {
+      const updated = platformConnections.map(c =>
+        c.id === connection.id ? { ...c, ...connection, updated_at: new Date().toISOString() } : c
+      );
+      setPlatformConnections(updated);
+      try {
+        await fetch(`http://127.0.0.1:3000/api/platforms/${connection.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(connection),
+        });
+      } catch {}
+    } else {
+      try {
+        const res = await fetch('http://127.0.0.1:3000/api/platforms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(connection),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const newConn: PlatformConnection = {
+            id: data.id,
+            platform_id: connection.platform_id!,
+            connection_name: connection.connection_name!,
+            api_key: connection.api_key!,
+            secret_key: connection.secret_key!,
+            is_testnet: connection.is_testnet ?? false,
+            status: connection.status ?? 'unknown',
+            last_tested_at: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          setPlatformConnections(prev => [...prev, newConn]);
+        }
+      } catch {}
+    }
+  }, [platformConnections]);
+
+  const handleDeletePlatformConnection = useCallback(async (id: string) => {
+    setPlatformConnections(prev => prev.filter(c => c.id !== id));
+    try {
+      await fetch(`http://127.0.0.1:3000/api/platforms/${id}`, { method: 'DELETE' });
+    } catch {}
+  }, []);
+
+  const handleTestPlatformConnection = useCallback(async (connection: PlatformConnection) => {
+    setTestingConnectionId(connection.id);
+    try {
+      const res = await fetch('http://127.0.0.1:3000/api/platforms/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform_id: connection.platform_id,
+          api_key: connection.api_key,
+          secret_key: connection.secret_key,
+          is_testnet: connection.is_testnet,
+        }),
+      });
+      const data = await res.json();
+      const newStatus = data.success ? 'connected' as const : 'error' as const;
+      setPlatformConnections(prev => prev.map(c =>
+        c.id === connection.id
+          ? { ...c, status: newStatus, last_tested_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+          : c
+      ));
+      if (data.success) {
+        addToast(`Connected to ${connection.connection_name}`, 'success');
+      } else {
+        addToast(`Connection test failed: ${data.error}`, 'error');
+      }
+    } catch {
+      setPlatformConnections(prev => prev.map(c =>
+        c.id === connection.id ? { ...c, status: 'error', last_tested_at: new Date().toISOString() } : c
+      ));
+      addToast('Connection test failed', 'error');
+    } finally {
+      setTestingConnectionId(null);
+    }
+  }, [addToast]);
+
   // ── Fetch alerts on mount ──
   useEffect(() => {
     fetchAlerts().then(setAlerts).catch(console.error);
     fetchWebhookLogs().then(setWebhookLogs).catch(console.error);
   }, [fetchAlerts, fetchWebhookLogs]);
+
+  // ── Fetch platform connections on mount ──
+  useEffect(() => {
+    fetch('http://127.0.0.1:3000/api/platforms')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) setPlatformConnections(data);
+      })
+      .catch(() => {
+        const saved = localStorage.getItem('tradefy-platform-connections');
+        if (saved) {
+          try { setPlatformConnections(JSON.parse(saved)); } catch {}
+        }
+      });
+  }, []);
+
+  // Persist platform connections to localStorage
+  useEffect(() => {
+    localStorage.setItem('tradefy-platform-connections', JSON.stringify(platformConnections));
+  }, [platformConnections]);
 
   // ── Alert WebSocket for browser notifications ──
   useEffect(() => {
@@ -994,6 +1104,16 @@ export function App() {
             onToggle={handleToggleAlert}
           />
         </div>
+      )}
+
+      {view === 'platforms' && (
+        <PlatformsPage
+          connections={platformConnections}
+          onSaveConnection={handleSavePlatformConnection}
+          onDeleteConnection={handleDeletePlatformConnection}
+          onTestConnection={handleTestPlatformConnection}
+          testingConnectionId={testingConnectionId}
+        />
       )}
 
       <AlertCreator

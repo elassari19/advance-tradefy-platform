@@ -10,6 +10,7 @@ mod indicator;
 mod indicators;
 mod time_series;
 mod models;
+mod platform_connector;
 mod python_runtime;
 mod simulator;
 mod state_persistence;
@@ -21,7 +22,7 @@ use alerts::AlertEngine;
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, Query, State},
     response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use indicators::{EvaluateBatchRequest, EvaluateBatchResponse, IndicatorPipeline, resolve_mtf};
@@ -30,6 +31,7 @@ use candle_aggregator::CandleAggregator;
 use exchange::{BinanceStream, ExchangeStream};
 use futures_util::{SinkExt, StreamExt};
 use models::{AIChatRequest, AlertRule, BacktestProgress, BacktestRequest, BinanceTicker, Candle, HistoryParams, OptimizeRequest, OrderRequest, PrepareDataRequest, PreparedData, SimulatorState, TestingMode, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle, TriggeredAlert};
+use platform_connector::PlatformConnection;
 use simulator::SimulatorEngine;
 use state_persistence::StateManager;
 use strategy::StrategyEngine;
@@ -68,6 +70,7 @@ struct AppState {
     state_manager: StateManager,
     last_alert_times: Mutex<HashMap<String, u64>>,
     exchange_stream: Box<dyn ExchangeStream>,
+    platform_connections: Mutex<Vec<PlatformConnection>>,
 }
 
 #[tokio::main]
@@ -120,6 +123,7 @@ async fn main() {
                 "migrations/008_create_saved_state.sql",
                 "migrations/009_create_execution_stats.sql",
                 "migrations/010_add_enhanced_backtest_fields.sql",
+                "migrations/011_create_exchange_connections.sql",
             ] {
                 let sql = match tokio::fs::read_to_string(migration).await {
                     Ok(content) => content,
@@ -166,6 +170,7 @@ async fn main() {
         state_manager,
         last_alert_times: Mutex::new(HashMap::new()),
         exchange_stream,
+        platform_connections: Mutex::new(Vec::new()),
     });
 
     let state_clone = app_state.clone();
@@ -253,6 +258,10 @@ async fn main() {
         .route("/api/ai/chat", post(ai_chat))
         .route("/api/strategy/execution-stats", get(get_execution_stats))
         .route("/api/exchanges", get(list_exchanges).post(set_active_exchange))
+        .route("/api/platforms", get(list_platforms).post(create_platform))
+        .route("/api/platforms/sync", post(sync_platforms))
+        .route("/api/platforms/:id", put(update_platform).delete(delete_platform))
+        .route("/api/platforms/test", post(test_platform_connection))
         .layer(cors)
         .with_state(app_state);
 
@@ -1450,6 +1459,105 @@ async fn get_execution_stats(
         }
     }
     Json(serde_json::json!({ "stats": stats }))
+}
+
+// ── Platform Connection API ──
+
+async fn list_platforms(
+    State(state): State<Arc<AppState>>,
+) -> Json<Vec<PlatformConnection>> {
+    let connections = state.platform_connections.lock().unwrap();
+    Json(connections.clone())
+}
+
+async fn create_platform(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    let connection = PlatformConnection {
+        id: id.clone(),
+        platform_id: payload.get("platform_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        connection_name: payload.get("connection_name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        api_key: payload.get("api_key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        secret_key: payload.get("secret_key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        is_testnet: payload.get("is_testnet").and_then(|v| v.as_bool()).unwrap_or(false),
+        status: "unknown".to_string(),
+        last_tested_at: None,
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    state.platform_connections.lock().unwrap().push(connection);
+    (axum::http::StatusCode::OK, Json(serde_json::json!({ "id": id })))
+}
+
+async fn update_platform(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let mut connections = state.platform_connections.lock().unwrap();
+    if let Some(conn) = connections.iter_mut().find(|c| c.id == id) {
+        if let Some(v) = payload.get("connection_name").and_then(|v| v.as_str()) {
+            conn.connection_name = v.to_string();
+        }
+        if let Some(v) = payload.get("api_key").and_then(|v| v.as_str()) {
+            conn.api_key = v.to_string();
+        }
+        if let Some(v) = payload.get("secret_key").and_then(|v| v.as_str()) {
+            conn.secret_key = v.to_string();
+        }
+        if let Some(v) = payload.get("is_testnet").and_then(|v| v.as_bool()) {
+            conn.is_testnet = v;
+        }
+        conn.updated_at = chrono::Utc::now().to_rfc3339();
+        (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "updated" })))
+    } else {
+        (axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Connection not found" })))
+    }
+}
+
+async fn delete_platform(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let mut connections = state.platform_connections.lock().unwrap();
+    let len_before = connections.len();
+    connections.retain(|c| c.id != id);
+    if connections.len() < len_before {
+        (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "deleted" })))
+    } else {
+        (axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Connection not found" })))
+    }
+}
+
+async fn sync_platforms(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<Vec<serde_json::Value>>,
+) -> impl IntoResponse {
+    let now = chrono::Utc::now().to_rfc3339();
+    let connections: Vec<PlatformConnection> = payload.into_iter().map(|v| PlatformConnection {
+        id: v.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        platform_id: v.get("platform_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        connection_name: v.get("connection_name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        api_key: v.get("api_key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        secret_key: v.get("secret_key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        is_testnet: v.get("is_testnet").and_then(|v| v.as_bool()).unwrap_or(false),
+        status: v.get("status").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+        last_tested_at: v.get("last_tested_at").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        created_at: v.get("created_at").and_then(|v| v.as_str()).unwrap_or(&now).to_string(),
+        updated_at: now.clone(),
+    }).collect();
+    *state.platform_connections.lock().unwrap() = connections;
+    (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "synced" })))
+}
+
+async fn test_platform_connection(
+    Json(payload): Json<platform_connector::TestConnectionRequest>,
+) -> Json<platform_connector::TestConnectionResponse> {
+    let result = platform_connector::test_exchange_connection(&payload);
+    Json(result)
 }
 
 async fn list_exchanges(

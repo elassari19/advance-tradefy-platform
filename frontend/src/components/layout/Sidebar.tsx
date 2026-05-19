@@ -1,8 +1,10 @@
-import { LineChart, FlaskConical, Code, Bell } from "lucide-react";
+import { LineChart, FlaskConical, Code, Bell, Cable } from "lucide-react";
+
+type View = 'trade' | 'backtest' | 'script' | 'alerts' | 'platforms';
 
 interface SidebarProps {
-  view: 'trade' | 'backtest' | 'script' | 'alerts';
-  onViewChange: (view: 'trade' | 'backtest' | 'script' | 'alerts') => void;
+  view: View;
+  onViewChange: (view: View) => void;
   isOpen: boolean;
   alertCount?: number;
 }
@@ -13,6 +15,7 @@ export function Sidebar({ view, onViewChange, isOpen, alertCount }: SidebarProps
     { id: 'backtest' as const, icon: FlaskConical, label: 'Backtest' },
     { id: 'script' as const, icon: Code, label: 'Pen Script' },
     { id: 'alerts' as const, icon: Bell, label: 'Alerts', badge: alertCount },
+    { id: 'platforms' as const, icon: Cable, label: 'Platforms' },
   ];
 
   return (
