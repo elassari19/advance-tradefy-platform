@@ -2,6 +2,8 @@ import { useState, useCallback } from 'react';
 
 const API_BASE = 'http://127.0.0.1:3000';
 
+export type TestingMode = 'EveryTick' | 'ControlPoints' | 'OpenPricesOnly';
+
 export interface BacktestRequest {
   strategy_code: string;
   symbol: string;
@@ -12,6 +14,8 @@ export interface BacktestRequest {
   commission: number;
   slippage: number;
   speed?: number;
+  testing_mode?: TestingMode;
+  visual?: boolean;
 }
 
 export interface BacktestTrade {
@@ -39,6 +43,13 @@ export interface EquityPoint {
   drawdown_pct: number;
 }
 
+export interface BacktestEvent {
+  timestamp: number;
+  event_type: string;
+  description: string;
+  details?: any;
+}
+
 export interface BacktestResultSummary {
   initial_balance: number;
   final_balance: number;
@@ -57,13 +68,58 @@ export interface BacktestResultSummary {
   largest_win: number;
   largest_loss: number;
   avg_holding_bars: number;
+  gross_profit: number;
+  gross_loss: number;
+  sortino_ratio: number;
+  calmar_ratio: number;
+  recovery_factor: number;
+  expected_payoff: number;
+  max_consecutive_wins: number;
+  max_consecutive_losses: number;
+  max_drawdown_duration: number;
+  avg_trade_duration: number;
+  return_on_account: number;
+  long_trades: number;
+  short_trades: number;
+  winning_long_pct: number;
+  winning_short_pct: number;
+  modeling_quality: number;
+  bars_in_test: number;
+  ticks_processed: number;
 }
 
 export interface BacktestResult {
   summary: BacktestResultSummary;
   trades: BacktestTrade[];
   equity_curve: EquityPoint[];
+  events?: BacktestEvent[];
   request: BacktestRequest;
+}
+
+export interface BacktestProgress {
+  progress: number;
+  trades: BacktestTrade[];
+  equity_curve: EquityPoint[];
+  events?: BacktestEvent[];
+  current_candle?: any;
+  done: boolean;
+  summary?: BacktestResultSummary;
+}
+
+export interface PrepareRequest {
+  symbol: string;
+  timeframe: string;
+  testing_mode: TestingMode;
+  start_time: number;
+  end_time: number;
+}
+
+export interface PrepareResponse {
+  status: string;
+  total_candles: number;
+  total_ticks: number;
+  date_range: { start: number; end: number };
+  modeling_quality: number;
 }
 
 export function useBacktest() {
@@ -134,6 +190,20 @@ export function useBacktest() {
     }
   }, []);
 
+  const prepareData = useCallback(async (req: PrepareRequest): Promise<PrepareResponse | null> => {
+    try {
+      const res = await fetch(`${API_BASE}/api/backtest/prepare-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+      });
+      if (!res.ok) return null;
+      return await res.json() as PrepareResponse;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const optimize = useCallback(async (req: any): Promise<any[] | null> => {
     setRunning(true);
     setError(null);
@@ -158,5 +228,5 @@ export function useBacktest() {
     }
   }, []);
 
-  return { runBacktest, saveBacktest, getBacktest, listBacktests, optimize, running, error };
+  return { runBacktest, saveBacktest, getBacktest, listBacktests, optimize, prepareData, running, error };
 }

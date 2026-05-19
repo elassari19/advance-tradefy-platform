@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { X, Plus, ChevronDown, BarChart3, FlaskConical, AlertTriangle, Loader2, Radio, Pause } from "lucide-react";
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, Plus, ChevronDown, BarChart3, FlaskConical, AlertTriangle, Loader2, Radio, Pause, Settings, ScrollText, BarChartHorizontal, FileText, ListTodo } from "lucide-react";
 import { useMarketDataForSymbol } from "./hooks/useMarketData";
 import { useSimulator } from "./hooks/useSimulator";
 import { useBacktest } from "./hooks/useBacktest";
@@ -14,15 +15,19 @@ import { TimeframeModal } from "./components/settings/TimeframeModal";
 import { AIChat } from "./components/chat/AIChat";
 import { IndicatorPanel } from "./components/indicators/IndicatorPanel";
 import { CustomIndicatorModal } from "./components/CustomIndicatorModal";
-import { BacktestConfig } from "./components/backtest/BacktestConfig";
-import { BacktestResults } from "./components/backtest/BacktestResults";
-import { OptimizationPanel } from "./components/backtest/OptimizationPanel";
 import { StrategyBrowser } from "./components/terminal/StrategyBrowser";
 import { AlertCreator } from "./components/alerts/AlertCreator";
 import { AlertsList } from "./components/alerts/AlertsList";
+import { TesterSettings } from "./components/backtest/TesterSettings";
+import { TesterResults } from "./components/backtest/TesterResults";
+import { TesterGraph } from "./components/backtest/TesterGraph";
+import { TesterReport } from "./components/backtest/TesterReport";
+import { TesterJournal } from "./components/backtest/TesterJournal";
+import { TesterToolbar } from "./components/backtest/TesterToolbar";
+import { VisualBacktestChart } from "./components/backtest/VisualBacktestChart";
 import type { WebhookConfig } from "./hooks/useSimulator";
 import type { IndicatorConfig, CustomIndicatorDef } from "./utils/indicators";
-import type { BacktestResult, BacktestRequest, BacktestTrade } from "./hooks/useBacktest";
+import type { BacktestResult, BacktestRequest, BacktestTrade, BacktestEvent, TestingMode, BacktestProgress } from "./hooks/useBacktest";
 import type { AlertRule, TriggeredAlert, WebhookLog } from "./hooks/useSimulator";
 
 type View = 'trade' | 'backtest' | 'script' | 'alerts';
@@ -65,11 +70,12 @@ export function App() {
   const [focusTab, setFocusTab] = useState<'positions' | 'history' | 'strategy' | 'logs' | undefined>(undefined);
 
   const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
+  const [activeTesterTab, setActiveTesterTab] = useState<string>('settings');
+  const [backtestEvents, setBacktestEvents] = useState<BacktestEvent[]>([]);
+  const [currentBarIndex, setCurrentBarIndex] = useState(0);
+  const [visualBacktestAllCandles, setVisualBacktestAllCandles] = useState<any[]>([]);
+  const [prepDataStatus, setPrepDataStatus] = useState<string>('');
   const [showStrategyBrowser, setShowStrategyBrowser] = useState(false);
-  const [optimizeOpen, setOptimizeOpen] = useState(false);
-  const [backtestPanelHeight, setBacktestPanelHeight] = useState(360);
-  const resizeRef = useRef(false);
-  const panelRef = useRef<HTMLDivElement>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [toasts, setToasts] = useState<Array<{id: string; message: string; type: 'error' | 'success' | 'info'}>>([]);
   const [showBacktestOverlay, setShowBacktestOverlay] = useState(false);
@@ -95,7 +101,7 @@ export function App() {
   const alertWsRef = useRef<WebSocket | null>(null);
 
   const { state: simState, placeOrder, updatePosition, closePosition, deployStrategy, removeStrategy, fetchActiveStrategies, saveWebhooks, fetchWebhooks, fetchAlerts, saveAlert, deleteAlert, fetchWebhookLogs } = useSimulator();
-  const { runBacktest, saveBacktest, running: backtestRunning, error: backtestError } = useBacktest();
+  const { runBacktest, saveBacktest, prepareData, running: backtestRunning, error: backtestError } = useBacktest();
 
   const addToast = useCallback((message: string, type: 'error' | 'success' | 'info' = 'info') => {
     const id = Math.random().toString(36).slice(2);
@@ -246,15 +252,51 @@ export function App() {
   }, [activeSymbol]);
 
   const handleBacktestRun = useCallback(async (req: BacktestRequest) => {
-    if (backtestLiveMode) {
+    setBacktestEvents([]);
+    setCurrentBarIndex(0);
+    setVisualBacktestAllCandles([]);
+    setActiveTesterTab('journal');
+
+    const isVisual = req.visual;
+
+    // Step 1: Prepare data
+    if (prepareData) {
+      setPrepDataStatus('Preparing data...');
+      const prep = await prepareData({
+        symbol: req.symbol,
+        timeframe: req.timeframe,
+        testing_mode: req.testing_mode || 'EveryTick',
+        start_time: req.start_time,
+        end_time: req.end_time,
+      });
+      if (prep) {
+        setBacktestTotalCandles(prep.total_candles);
+        setPrepDataStatus(`Data ready: ${prep.total_candles} candles, ${prep.total_ticks} ticks`);
+      } else {
+        setPrepDataStatus('');
+      }
+    }
+
+    if (isVisual) {
       setLiveBacktestRunning(true);
       setLiveBacktestProgress(0);
       backtestTradesRef.current = [];
       setBacktestTradesState([]);
-      // Track backtest symbol/timeframe for chart display
       setLastBacktestSymbol(req.symbol);
       setLastBacktestTimeframe(req.timeframe);
-      setShowBacktestOverlay(true);
+
+      // Fetch candles for visual display
+      try {
+        const res = await fetch(`http://127.0.0.1:3000/api/history?symbol=${req.symbol}&interval=${req.timeframe}&limit=500`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setVisualBacktestAllCandles(data.map((c: any) => ({
+              time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
+            })));
+          }
+        }
+      } catch {}
 
       const ws = new WebSocket('ws://127.0.0.1:3000/ws/backtest');
       backtestWsRef.current = ws;
@@ -271,10 +313,15 @@ export function App() {
             addToast(`Backtest started: ${data.total_candles} candles`, 'info');
           } else if (data.type === 'progress') {
             setLiveBacktestProgress(data.progress);
-            // Calculate cursor time from the latest equity_curve entry
+            if (data.current_candle) {
+              setCurrentBarIndex(prev => prev + 1);
+            }
             if (data.equity_curve && data.equity_curve.length > 0) {
               const last = data.equity_curve[data.equity_curve.length - 1];
               setBacktestCursorTime(last.time);
+            }
+            if (data.events) {
+              setBacktestEvents(prev => [...prev, ...data.events]);
             }
             if (data.trades) {
               finalTrades = data.trades;
@@ -285,18 +332,21 @@ export function App() {
               setLiveBacktestRunning(false);
               setLiveBacktestProgress(1);
               setBacktestCursorTime(undefined);
-              addToast(`Live backtest complete: ${finalTrades.length} trades`, 'success');
+              setPrepDataStatus('');
+              addToast(`Backtest complete: ${finalTrades.length} trades`, 'success');
               ws.close();
-              // Construct full result from accumulated trades + summary from server
               if (data.summary) {
                 setBacktestResult({
                   summary: data.summary,
                   trades: finalTrades,
                   equity_curve: data.equity_curve || [],
+                  events: data.events || [],
                   request: req as any,
                 });
-              } else {
-                setBacktestResult(null);
+                setActiveTesterTab('results');
+                if (window.electronAPI) {
+                  window.electronAPI.showNotification('Backtest Complete', `${finalTrades.length} trades, ${data.summary.net_profit >= 0 ? '+' : ''}$${data.summary.net_profit.toFixed(2)} profit`);
+                }
               }
             }
           } else if (data.type === 'paused') {
@@ -307,11 +357,13 @@ export function App() {
             setLiveBacktestRunning(false);
             setLiveBacktestPaused(false);
             setBacktestCursorTime(undefined);
+            setPrepDataStatus('');
             addToast('Backtest stopped', 'info');
             ws.close();
           } else if (data.type === 'error') {
             addToast(data.error, 'error');
             setLiveBacktestRunning(false);
+            setPrepDataStatus('');
             ws.close();
           }
         } catch {}
@@ -320,12 +372,14 @@ export function App() {
       ws.onerror = () => {
         addToast('WebSocket connection failed', 'error');
         setLiveBacktestRunning(false);
+        setPrepDataStatus('');
       };
 
       ws.onclose = () => {
         setLiveBacktestRunning(false);
         setLiveBacktestPaused(false);
         setBacktestCursorTime(undefined);
+        setPrepDataStatus('');
         backtestWsRef.current = null;
       };
     } else {
@@ -337,11 +391,13 @@ export function App() {
         setBacktestTradesState(trades);
         setLastBacktestSymbol(req.symbol);
         setLastBacktestTimeframe(req.timeframe);
-        setShowBacktestOverlay(true);
+        if (result.events) setBacktestEvents(result.events);
+        setActiveTesterTab('results');
+        setPrepDataStatus('');
         addToast('Backtest completed successfully', 'success');
       }
     }
-  }, [runBacktest, addToast, backtestLiveMode, setView]);
+  }, [runBacktest, addToast, backtestLiveMode, setView, prepareData]);
 
   const handleBacktestSave = useCallback(async () => {
     if (!backtestResult) return;
@@ -424,29 +480,6 @@ export function App() {
       return newTabs;
     });
   }, [activeSymbol]);
-
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    resizeRef.current = true;
-    const startY = e.clientY;
-    const startHeight = backtestPanelHeight;
-
-    const onMouseMove = (me: MouseEvent) => {
-      if (!resizeRef.current) return;
-      const delta = startY - me.clientY;
-      const newHeight = Math.min(Math.max(startHeight + delta, 200), window.innerHeight - 200);
-      setBacktestPanelHeight(newHeight);
-    };
-
-    const onMouseUp = () => {
-      resizeRef.current = false;
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  }, [backtestPanelHeight]);
 
   const handleSaveWebhooks = async (newWebhooks: WebhookConfig[]) => {
     await saveWebhooks(newWebhooks);
@@ -632,116 +665,131 @@ export function App() {
 
       {view === 'backtest' && (
         <div className="h-[calc(100vh-56px)] flex flex-col overflow-hidden">
-          <div className="flex-1 min-h-0 overflow-y-auto p-4">
-            {liveBacktestRunning || (backtestTradesState.length > 0 && !backtestResult) ? (
-              <div className="h-full">
-                <BacktestChart
-                  symbol={lastBacktestSymbol || activeSymbol.replace('/', '')}
-                  timeframe={lastBacktestTimeframe || (timeframe >= 60 ? `${Math.floor(timeframe / 60)}h` : `${timeframe}m`)}
-                  backtestTrades={backtestTradesState}
-                  backtestCursorTime={backtestCursorTime}
-                />
-              </div>
-            ) : backtestResult ? (
-              <BacktestResults result={backtestResult} onSave={handleBacktestSave} />
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8">
-                <FlaskConical size={64} className="text-zinc-600 mb-4" />
-                <h2 className="text-xl font-bold text-white mb-2">Backtest</h2>
-                <p className="text-zinc-400 max-w-md text-sm">
-                  Configure your backtest settings below and click <span className="text-blue-400 font-bold">Run Backtest</span> to simulate your strategy against historical market data.
-                </p>
-              </div>
-            )}
+          {/* Tab Bar */}
+          <div className="flex items-center border-b border-zinc-800 bg-[#09090b] shrink-0 overflow-x-auto">
+            {[
+              { id: 'settings', label: 'Settings', icon: Settings },
+              { id: 'results', label: 'Results', icon: BarChartHorizontal },
+              { id: 'graph', label: 'Graph', icon: BarChart3 },
+              { id: 'report', label: 'Report', icon: FileText },
+              { id: 'journal', label: 'Journal', icon: ListTodo },
+            ].map(tab => {
+              const isActive = activeTesterTab === tab.id;
+              const showTab = tab.id === 'settings' || tab.id === 'journal' || (backtestResult && tab.id !== 'settings');
+              if (!showTab) return null;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTesterTab(tab.id)}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-r border-zinc-800 transition-colors whitespace-nowrap ${
+                    isActive
+                      ? 'bg-zinc-900 text-white border-b-2 border-b-blue-500'
+                      : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
+                  }`}
+                >
+                  <tab.icon size={14} />
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
-          <div
-            onMouseDown={handleResizeStart}
-            className="shrink-0 h-2 cursor-row-resize bg-zinc-800 hover:bg-blue-600/50 transition-colors relative z-10 border-y border-zinc-700/50"
-          />
-          <div
-            ref={panelRef}
-            className="shrink-0 overflow-y-auto border-t border-zinc-800 p-4 space-y-4 bg-[#09090b]"
-            style={{ height: backtestPanelHeight }}
-          >
-            <BacktestConfig
-              strategyCode={currentStrategyCode}
-              onRun={handleBacktestRun}
-              running={backtestRunning || liveBacktestRunning}
-              onLoadStrategy={handleLoadStrategy}
-              liveMode={backtestLiveMode}
-              onLiveModeChange={setBacktestLiveMode}
-              speed={backtestSpeed}
-              onSpeedChange={(s) => {
-                setBacktestSpeed(s);
-                if (backtestWsRef.current) {
-                  backtestWsRef.current.send(JSON.stringify({ type: 'speed', speed: s }));
-                }
-              }}
-              liveRunning={liveBacktestRunning}
-              livePaused={liveBacktestPaused}
-              onPause={() => backtestWsRef.current?.send(JSON.stringify({ type: 'pause' }))}
-              onContinue={() => backtestWsRef.current?.send(JSON.stringify({ type: 'continue' }))}
-              onStop={() => backtestWsRef.current?.send(JSON.stringify({ type: 'stop' }))}
-            />
-            {liveBacktestRunning && (
-              <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {liveBacktestPaused ? (
-                      <Pause size={12} className="text-amber-400" />
-                    ) : (
-                      <Loader2 size={12} className="animate-spin text-blue-400" />
-                    )}
-                    <span className="text-[10px] font-bold text-zinc-400">
-                      {liveBacktestPaused ? 'Paused' : 'Streaming Backtest'}
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-mono text-zinc-500">
-                    {(liveBacktestProgress * 100).toFixed(0)}%
-                  </span>
-                </div>
-                <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-200 rounded-full ${
-                      liveBacktestPaused ? 'bg-amber-500' : 'bg-blue-500'
-                    }`}
-                    style={{ width: `${liveBacktestProgress * 100}%` }}
+
+          {/* Main Content */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 bg-[#09090b]">
+            {/* Visual mode chart */}
+            {(liveBacktestRunning || liveBacktestPaused) && visualBacktestAllCandles.length > 0 ? (
+              <div className="h-full flex flex-col">
+                <div className="flex-1 min-h-0">
+                  <VisualBacktestChart
+                    allCandles={visualBacktestAllCandles}
+                    currentBarIndex={currentBarIndex}
+                    trades={backtestTradesState}
+                    cursorTime={backtestCursorTime}
+                    symbol={lastBacktestSymbol || activeSymbol.replace('/', '')}
                   />
                 </div>
               </div>
-            )}
-            <button
-              onClick={() => setOptimizeOpen(!optimizeOpen)}
-              className={`w-full flex items-center justify-between px-4 py-2 rounded-lg text-xs font-bold transition-all border ${
-                optimizeOpen
-                  ? 'bg-purple-600/10 border-purple-500/30 text-purple-400'
-                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <span>Strategy Optimization</span>
-              <ChevronDown size={14} className={`transition-transform ${optimizeOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {optimizeOpen && (
-              <OptimizationPanel
-                strategyCode={currentStrategyCode}
-                symbol={activeSymbol.replace('/', '')}
-                timeframe="1h"
-                startTime={Math.floor(new Date(new Date().getTime() - 90 * 24 * 60 * 60 * 1000).getTime() / 1000)}
-                endTime={Math.floor(Date.now() / 1000)}
-                initialCapital={10000}
-                commission={0.001}
-                slippage={0.0001}
-              />
-            )}
-            {backtestResult && (
-              <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Strategy</h3>
-                <pre className="text-[10px] text-zinc-400 font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
-                  {currentStrategyCode}
-                </pre>
-              </div>
+            ) : null}
+
+            {/* Tab content (hidden when visual mode chart is showing) */}
+            {!(liveBacktestRunning || liveBacktestPaused) && (
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeTesterTab}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.15 }}
+                  className="h-full"
+                >
+                  {activeTesterTab === 'settings' && (
+                    <div className="max-w-lg mx-auto">
+                      <TesterSettings
+                        strategyCode={currentStrategyCode}
+                        onRun={handleBacktestRun}
+                        running={backtestRunning || liveBacktestRunning}
+                        onLoadStrategy={handleLoadStrategy}
+                      />
+                    </div>
+                  )}
+                  {activeTesterTab === 'results' && backtestResult && (
+                    <TesterResults result={backtestResult} />
+                  )}
+                  {activeTesterTab === 'graph' && backtestResult && (
+                    <TesterGraph result={backtestResult} />
+                  )}
+                  {activeTesterTab === 'report' && backtestResult && (
+                    <TesterReport result={backtestResult} />
+                  )}
+                  {activeTesterTab === 'journal' && (
+                    <div className="h-full flex flex-col" style={{ minHeight: '300px' }}>
+                      <TesterJournal events={backtestEvents} />
+                    </div>
+                  )}
+                </motion.div>
+              </AnimatePresence>
             )}
           </div>
+
+          {/* Visual mode toolbar */}
+          {liveBacktestRunning && (
+            <div className="shrink-0 px-4 pb-4 pt-2">
+              <TesterToolbar
+                running={liveBacktestRunning}
+                paused={liveBacktestPaused}
+                progress={liveBacktestProgress}
+                currentBar={currentBarIndex}
+                totalBars={backtestTotalCandles || visualBacktestAllCandles.length}
+                currentTime={backtestCursorTime ? new Date(backtestCursorTime * 1000).toISOString().slice(0, 16).replace('T', ' ') : undefined}
+                speed={backtestSpeed}
+                onPlay={() => {
+                  if (liveBacktestPaused) {
+                    backtestWsRef.current?.send(JSON.stringify({ type: 'continue' }));
+                    setLiveBacktestPaused(false);
+                  } else if (!liveBacktestRunning) {
+                    // Re-run logic
+                  }
+                }}
+                onPause={() => backtestWsRef.current?.send(JSON.stringify({ type: 'pause' }))}
+                onStop={() => backtestWsRef.current?.send(JSON.stringify({ type: 'stop' }))}
+                onStepBack={() => backtestWsRef.current?.send(JSON.stringify({ type: 'step', direction: -1 }))}
+                onStepForward={() => backtestWsRef.current?.send(JSON.stringify({ type: 'step', direction: 1 }))}
+                onSpeedChange={(s) => {
+                  setBacktestSpeed(s);
+                  backtestWsRef.current?.send(JSON.stringify({ type: 'speed', speed: s }));
+                }}
+              />
+            </div>
+          )}
+
+          {/* Prep data status */}
+          {prepDataStatus && !liveBacktestRunning && (
+            <div className="shrink-0 px-4 pb-2">
+              <div className="bg-zinc-900/80 border border-zinc-800 rounded-lg px-3 py-2 text-[10px] text-zinc-400">
+                {prepDataStatus}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -853,55 +901,6 @@ export function App() {
         </button>
       )}
       </div>
-    </div>
-  );
-}
-
-function BacktestChart({ symbol, timeframe, backtestTrades, backtestCursorTime }: { symbol: string; timeframe: string; backtestTrades: BacktestTrade[]; backtestCursorTime?: number }) {
-  const [candles, setCandles] = useState<Candle[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    fetch(`http://127.0.0.1:3000/api/history?symbol=${symbol}&interval=${timeframe}&limit=500`)
-      .then(r => r.json())
-      .then(data => {
-        if (!mounted) return;
-        if (Array.isArray(data)) {
-          setCandles(data.map((c: any) => ({
-            time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
-          })));
-        }
-        setLoading(false);
-      })
-      .catch(() => { if (mounted) setLoading(false); });
-    return () => { mounted = false; };
-  }, [symbol, timeframe]);
-
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-[#09090b] rounded-lg border border-zinc-800 min-h-[300px]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm text-zinc-500">Loading {symbol} chart...</span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-[#09090b] rounded-lg border border-zinc-800 overflow-hidden">
-      <Chart
-        candles={candles}
-        positions={[]}
-        onUpdatePosition={() => {}}
-        chartType="candle"
-        indicatorConfigs={[]}
-        backtestTrades={backtestTrades}
-        showBacktestOverlay={true}
-        backtestCursorTime={backtestCursorTime}
-      />
     </div>
   );
 }

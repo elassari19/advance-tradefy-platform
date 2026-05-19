@@ -110,125 +110,125 @@
 
 ### 2.1 TypeScript Types
 
-- [ ] Add `TestingMode` type alias to `useBacktest.ts`
-- [ ] Add `testing_mode` and `visual` to `BacktestRequest` interface
-- [ ] Add `BacktestEvent` interface
-- [ ] Add `events` and `current_candle` to `BacktestProgress` interface
-- [ ] Add all enhanced metrics to `BacktestResultSummary` interface
-- [ ] Add `prepareData()` function declaration
-- [ ] Add `PrepareRequest` and `PrepareResponse` interfaces
+- [x] Add `TestingMode` type alias to `useBacktest.ts`
+- [x] Add `testing_mode` and `visual` to `BacktestRequest` interface
+- [x] Add `BacktestEvent` interface
+- [x] Add `events` and `current_candle` to `BacktestProgress` interface
+- [x] Add all enhanced metrics to `BacktestResultSummary` interface
+- [x] Add `prepareData()` function declaration
+- [x] Add `PrepareRequest` and `PrepareResponse` interfaces
 
 ### 2.2 Tabbed Tester Layout
 
-- [ ] Build tab bar component with 5 tabs: Settings, Results, Graph, Report, Journal
-- [ ] Implement tab visibility logic (Settings + Journal always visible, others post-run)
-- [ ] Integrate into backtest view in `App.tsx`
-- [ ] Replace current backtest page layout with new tabbed structure
-- [ ] Add transition/animation on tab switch
+- [x] Build tab bar component with 5 tabs: Settings, Results, Graph, Report, Journal
+- [x] Implement tab visibility logic (Settings + Journal always visible, others post-run)
+- [x] Integrate into backtest view in `App.tsx`
+- [x] Replace current backtest page layout with new tabbed structure
+- [x] Add transition/animation on tab switch
 
 ### 2.3 TesterSettings Component
 
-- [ ] Build form sections matching MT4/5:
+- [x] Build form sections matching MT4/5:
   - Expert Advisor selector
   - Symbol + Timeframe dropdowns
   - Testing Period (presets + custom date range)
   - Testing Mode radio buttons (Every Tick / 1-min OHLC / Open Prices Only)
   - Initial parameters (balance, commission, slippage)
   - Visual mode toggle + speed presets
-- [ ] Wire form state to backtest run action
-- [ ] Add "Browse Strategies" and "Edit" buttons
+- [x] Wire form state to backtest run action
+- [x] Add "Browse Strategies" and "Edit" buttons
 
 ### 2.4 VisualBacktestChart Component
 
-- [ ] Build progressive candle playback using `lightweight-charts`
-- [ ] Accept `allCandles` + `currentBarIndex` — render `candles.slice(0, currentBarIndex)`
-- [ ] Draw trade entry markers (green ▲ for Buy, red ▼ for Sell)
-- [ ] Draw entry→exit lines for closed trades
-- [ ] Draw TP/SL horizontal dashed lines per open trade
-- [ ] Highlight current candle with border glow
-- [ ] Add crosshair with tooltip showing price/time/bar info
-- [ ] Handle live bar-by-bar updates from WebSocket
+- [x] Build progressive candle playback using `lightweight-charts`
+- [x] Accept `allCandles` + `currentBarIndex` — render `candles.slice(0, currentBarIndex)`
+- [x] Draw trade entry markers (green ▲ for Buy, red ▼ for Sell)
+- [x] Draw entry→exit lines for closed trades
+- [x] Draw TP/SL horizontal dashed lines per open trade
+- [x] Highlight current candle with border glow
+- [x] Add crosshair with tooltip showing price/time/bar info
+- [x] Handle live bar-by-bar updates from WebSocket
 
 ### 2.5 TesterResults Component
 
-- [ ] Build full trade results table with columns:
+- [x] Build full trade results table with columns:
   - # | Time | Type | Symbol | Volume | Open Price | SL | TP | Close Price | Commission | Swap | Profit | Balance
-- [ ] Implement column sorting
-- [ ] Implement filter: All / Buy / Sell toggle
-- [ ] Implement expandable row with trade detail card
-- [ ] Implement pagination for 50+ trades
-- [ ] Right-click context menu: Copy, Copy All, Save as HTML
-- [ ] Summary bar at top: total trades, wins, losses, win rate, net PnL
+- [x] Implement column sorting
+- [x] Implement filter: All / Buy / Sell toggle
+- [x] Implement expandable row with trade detail card
+- [x] Implement pagination for 50+ trades
+- [x] Right-click context menu: Copy, Copy All, Save as HTML
+- [x] Summary bar at top: total trades, wins, losses, win rate, net PnL
 
 ### 2.6 TesterGraph Component
 
-- [ ] Build 3 synchronized charts stacked vertically:
+- [x] Build 3 synchronized charts stacked vertically:
   - Chart 1: Balance (blue line) + Equity (green line)
   - Chart 2: Drawdown % (red filled area)
   - Chart 3: Trade profit dots (green ↑ win, red ↓ loss)
-- [ ] Implement crosshair sync across all three charts
-- [ ] Add axis labels and legend
-- [ ] Export as PNG (via canvas `toDataURL`)
-- [ ] Tooltip on hover showing exact values per point
+- [x] Implement crosshair sync across all three charts
+- [x] Add axis labels and legend
+- [x] Export as PNG (via canvas `toDataURL`)
+- [x] Tooltip on hover showing exact values per point
 
 ### 2.7 TesterReport Component
 
-- [ ] Build structured report layout matching MT4/5 style
-- [ ] Sections:
+- [x] Build structured report layout matching MT4/5 style
+- [x] Sections:
   - Results (initial/final balance, net profit)
   - Profitability (gross profit/loss, profit factor, expected payoff, recovery factor)
   - Drawdown (max drawdown $/%, max DD duration, absolute drawdown)
   - Trades (total, long/short breakdown, win rate, consecutive W/L, avg duration)
   - Ratios (Sharpe, Sortino, Calmar)
   - Statistics (bars in test, ticks processed, modeling quality)
-- [ ] Color-code metrics (green positive, red negative)
-- [ ] "Save as HTML" button → Electron save dialog
-- [ ] "Copy to clipboard" button
+- [x] Color-code metrics (green positive, red negative)
+- [x] "Save as HTML" button → Electron save dialog
+- [x] "Copy to clipboard" button
 
 ### 2.8 TesterJournal Component
 
-- [ ] Build terminal-style scrollable log view
-- [ ] Color-coded entries:
+- [x] Build terminal-style scrollable log view
+- [x] Color-coded entries:
   - Blue → info
   - Orange → signal
   - Green → buy/order_open
   - Red → sell/order_close
   - Yellow → tp_hit / sl_hit
-- [ ] Auto-scroll toggle (follow new entries)
-- [ ] Filter checkboxes by event type
-- [ ] Right-click context: Copy Entry, Copy All, Clear
-- [ ] Timestamp formatting: `[YYYY-MM-DD HH:MM]`
+- [x] Auto-scroll toggle (follow new entries)
+- [x] Filter checkboxes by event type
+- [x] Right-click context: Copy Entry, Copy All, Clear
+- [x] Timestamp formatting: `[YYYY-MM-DD HH:MM]`
 
 ### 2.9 TesterToolbar Component
 
-- [ ] Build control bar:
+- [x] Build control bar:
   - Play ▶, Pause ⏸, Stop ⏹ buttons
   - Step Backward ⏮, Step Forward ⏭ buttons
   - Speed radio group: 1x, 2x, 5x, 10x, 50x, 100x, 500x, Max
   - Progress bar with percentage
   - Bar counter: `Bar: 5,876 / 8,760`
   - Current date/time display
-- [ ] Wire controls to WebSocket commands (play/pause/stop/speed)
-- [ ] Step buttons send jump commands with direction offset
+- [x] Wire controls to WebSocket commands (play/pause/stop/speed)
+- [x] Step buttons send jump commands with direction offset
 
 ### 2.10 App.tsx — Backtest Orchestration
 
-- [ ] Refactor `handleBacktestRun` for two-step flow:
+- [x] Refactor `handleBacktestRun` for two-step flow:
   1. Send `POST /api/backtest/prepare-data` with options
   2. Show "Preparing data..." loading state with metadata
   3. On visual mode: connect WebSocket, send BacktestRequest
   4. On each WS message: update `currentBarIndex`, events, progress
   5. On completion: populate Results/Graph/Report tabs
-- [ ] Add state for: `currentBarIndex`, `events`, `testingMode`, `visualEnabled`
-- [ ] Add tab state management (`activeTesterTab`)
-- [ ] Wire `TesterSettings` form to backtest trigger
-- [ ] Handle WebSocket reconnection and error states
+- [x] Add state for: `currentBarIndex`, `events`, `testingMode`, `visualEnabled`
+- [x] Add tab state management (`activeTesterTab`)
+- [x] Wire `TesterSettings` form to backtest trigger
+- [x] Handle WebSocket reconnection and error states
 
 ### 2.11 Chart Component — Progressive Data Support
 
-- [ ] Modify `Chart.tsx` to support incremental data updates (used by `VisualBacktestChart`)
-- [ ] Accept partial candle data and append without full re-render
-- [ ] Support add/remove trade markers dynamically
+- [x] Modify `Chart.tsx` to support incremental data updates (used by `VisualBacktestChart`)
+- [x] Accept partial candle data and append without full re-render
+- [x] Support add/remove trade markers dynamically
 
 ---
 
@@ -251,7 +251,7 @@
 ### 3.3 Notification on Completion
 
 - [x] Wire `notification:show` IPC call at end of long backtest (pre-existing, handler ready)
-- [ ] Notification text: "Backtest complete: X trades, $Y profit" (frontend integration)
+- [x] Notification text: "Backtest complete: X trades, $Y profit" (frontend integration)
 
 ### 3.4 Expose new IPC in Preload
 
