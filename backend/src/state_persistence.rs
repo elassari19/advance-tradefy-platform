@@ -31,9 +31,9 @@ impl StateManager {
         let result = sqlx::query(
             r#"
             INSERT INTO saved_state (id, state_type, state_json, updated_at)
-            VALUES ('default', 'simulator', $1, NOW())
+            VALUES ('default', 'simulator', $1::jsonb, NOW())
             ON CONFLICT (id, state_type)
-            DO UPDATE SET state_json = $1, updated_at = NOW()
+            DO UPDATE SET state_json = $1::jsonb, updated_at = NOW()
             "#,
         )
         .bind(&state_json)

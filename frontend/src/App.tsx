@@ -20,7 +20,6 @@ import { AlertCreator } from "./components/alerts/AlertCreator";
 import { AlertsList } from "./components/alerts/AlertsList";
 import { TesterSettings } from "./components/backtest/TesterSettings";
 import { TesterResults } from "./components/backtest/TesterResults";
-import { TesterGraph } from "./components/backtest/TesterGraph";
 import { TesterReport } from "./components/backtest/TesterReport";
 import { TesterJournal } from "./components/backtest/TesterJournal";
 import { TesterToolbar } from "./components/backtest/TesterToolbar";
@@ -41,6 +40,48 @@ function formatTimeframe(minutes: number): string {
   if (minutes >= 60) return `${Math.floor(minutes / 60)}H`;
   return `${minutes}m`;
 }
+
+const BacktestChartPanel = ({
+  symbol,
+  timeframe,
+  chartType,
+  backtestTrades,
+  showBacktestOverlay,
+  backtestCursorTime,
+}: {
+  symbol: string;
+  timeframe: number;
+  chartType: ChartType;
+  backtestTrades?: BacktestTrade[];
+  showBacktestOverlay?: boolean;
+  backtestCursorTime?: number;
+}) => {
+  const { candles, isInitializing } = useMarketDataForSymbol(symbol, timeframe);
+
+  if (isInitializing) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-[#09090b]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm text-zinc-500">Loading {symbol}...</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Chart
+      candles={candles}
+      positions={[]}
+      onUpdatePosition={() => {}}
+      chartType={chartType}
+      indicatorConfigs={[]}
+      backtestTrades={backtestTrades}
+      showBacktestOverlay={showBacktestOverlay}
+      backtestCursorTime={backtestCursorTime}
+    />
+  );
+};
 
 export function App() {
   const [view, setView] = useState<View>('trade');
@@ -712,8 +753,8 @@ export function App() {
             className="shrink-0 overflow-hidden flex flex-col"
             style={{ height: `${backtestSplitRatio * 100}%` }}
           >
-            {(liveBacktestRunning || liveBacktestPaused) && visualBacktestAllCandles.length > 0 ? (
-              <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 relative">
+              <div className={`absolute inset-0 ${(liveBacktestRunning || liveBacktestPaused) && visualBacktestAllCandles.length > 0 ? '' : 'hidden'}`}>
                 <VisualBacktestChart
                   allCandles={visualBacktestAllCandles}
                   currentBarIndex={currentBarIndex}
@@ -722,15 +763,17 @@ export function App() {
                   symbol={lastBacktestSymbol || activeSymbol.replace('/', '')}
                 />
               </div>
-            ) : backtestResult ? (
-              <div className="flex-1 min-h-0 overflow-y-auto p-4 pb-2">
-                <TesterGraph result={backtestResult} />
+              <div className={`absolute inset-0 ${(liveBacktestRunning || liveBacktestPaused) && visualBacktestAllCandles.length > 0 ? 'hidden' : ''}`}>
+                <BacktestChartPanel
+                  symbol={activeSymbol}
+                  timeframe={timeframe}
+                  chartType={chartType}
+                  backtestTrades={backtestTradesState}
+                  showBacktestOverlay={showBacktestOverlay}
+                  backtestCursorTime={backtestCursorTime}
+                />
               </div>
-            ) : (
-              <div className="flex items-center justify-center h-full text-zinc-600 text-xs">
-                Run a backtest to see the performance chart
-              </div>
-            )}
+            </div>
           </div>
 
           {/* Drag handle */}

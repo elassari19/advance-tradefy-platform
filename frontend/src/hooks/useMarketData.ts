@@ -125,7 +125,7 @@ function useMarketDataForSymbol(symbol: string, timeframe: number) {
       };
 
       tickWs.current.onerror = () => {
-        if (mountedRef.current) tickWs.current?.close();
+        // Connection will close itself; onclose handles reconnection
       };
     };
 
@@ -167,7 +167,7 @@ function useMarketDataForSymbol(symbol: string, timeframe: number) {
       };
 
       candleWs.current.onerror = () => {
-        if (mountedRef.current) candleWs.current?.close();
+        // Connection will close itself; onclose handles reconnection
       };
     };
 
