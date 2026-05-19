@@ -873,6 +873,27 @@ export function App() {
                     onToolChange={setDrawingTool}
                     onClearAll={() => setDrawings([])}
                   />
+                  {currentStrategyActive && (
+                    <div className="absolute top-2 left-12 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-900/90 border border-zinc-700/50 shadow-lg backdrop-blur-sm">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Strategy</span>
+                      <div className="w-px h-3 bg-zinc-700 mx-1" />
+                      <button
+                        onClick={() => setRightPanel(prev => prev === 'strategy' ? null : 'strategy')}
+                        className="text-[9px] font-bold text-zinc-500 hover:text-zinc-200 px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors"
+                        title="Edit strategy"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleRemoveStrategy(activeSymbol)}
+                        className="text-zinc-500 hover:text-red-400 p-0.5 rounded hover:bg-red-500/10 transition-colors"
+                        title="Remove from chart"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  )}
                   <TabChart
                     key={activeSymbol}
                     symbol={activeSymbol}
