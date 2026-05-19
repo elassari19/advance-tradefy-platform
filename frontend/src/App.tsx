@@ -181,6 +181,7 @@ export function App() {
 
   // ── Persist chart state ──
   const CHART_STATE_KEY = 'tradefy-chart-state';
+  const loadedRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -195,9 +196,11 @@ export function App() {
         if (state.indicatorConfigs) setIndicatorConfigs(state.indicatorConfigs as Record<string, IndicatorConfig[]>);
       }
     } catch {}
+    loadedRef.current = true;
   }, []);
 
   useEffect(() => {
+    if (!loadedRef.current) return;
     const state = { timeframe, chartType, drawings, strategyCodes, activeStrategySymbols, indicatorConfigs };
     localStorage.setItem(CHART_STATE_KEY, JSON.stringify(state));
   }, [timeframe, chartType, drawings, strategyCodes, activeStrategySymbols, indicatorConfigs]);
