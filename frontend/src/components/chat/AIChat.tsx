@@ -277,7 +277,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
           {/* Message List */}
           {currentMessages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`group relative max-w-[80%] rounded-lg p-4 ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-zinc-800 text-zinc-200'}`}>
+              <div className={`group relative max-w-[80%] p-4 ${msg.role === 'user' ? 'bg-transparent border-l-2 border-lime-600 text-zinc-200' : 'bg-zinc-800 text-zinc-200'}`}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-medium opacity-70">{msg.role === 'user' ? 'You' : msg.model || 'Assistant'}</span>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -356,7 +356,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
               onKeyDown={handleKeyDown}
               placeholder="Ask me anything about trading, analysis, or strategy..."
               rows={1}
-              className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary text-white placeholder-zinc-500 resize-none min-h-[48px] max-h-[200px]"
+              className="flex-1 bg-transparent border-l-2 border-lime-600 px-4 py-3 text-sm focus:outline-none text-white placeholder-zinc-500 resize-none min-h-[48px] max-h-[200px]"
               disabled={isStreaming}
             />
             {isStreaming ? (
