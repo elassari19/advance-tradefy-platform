@@ -9,6 +9,8 @@ import { OrderPanel } from "./components/order/OrderPanel";
 import { TerminalTabs } from "./components/terminal/TerminalTabs";
 import { Header } from "./components/layout/Header";
 import { Sidebar } from "./components/layout/Sidebar";
+import { RightSidebar } from "./components/layout/RightSidebar";
+import { SlidePanel } from "./components/layout/SlidePanel";
 import { WebhookSettings } from "./components/settings/WebhookSettings";
 import { SymbolSearchModal } from "./components/settings/SymbolSearchModal";
 import { TimeframeModal } from "./components/settings/TimeframeModal";
@@ -33,7 +35,7 @@ import type { IndicatorConfig, CustomIndicatorDef } from "./utils/indicators";
 import type { BacktestResult, BacktestRequest, BacktestTrade, BacktestEvent, TestingMode, BacktestProgress } from "./hooks/useBacktest";
 import type { AlertRule, TriggeredAlert, WebhookLog } from "./hooks/useSimulator";
 
-type View = 'trade' | 'backtest' | 'script' | 'alerts' | 'platforms';
+type View = 'trade' | 'backtest' | 'platforms';
 type ChartType = 'area' | 'line' | 'candle';
 
 const DEFAULT_STRATEGY_CODE = '# Write your strategy here...\n\ndef on_tick(price, candles):\n    pass';
@@ -90,6 +92,7 @@ const BacktestChartPanel = ({
 
 export function App() {
   const [view, setView] = useState<View>('trade');
+  const [rightPanel, setRightPanel] = useState<'script' | 'alerts' | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
@@ -369,7 +372,7 @@ export function App() {
       alertWsRef.current = ws;
     }
 
-    if (view === 'trade' || view === 'alerts') {
+    if (view === 'trade' || rightPanel === 'alerts') {
       connectAlertWs();
     }
 
@@ -379,7 +382,7 @@ export function App() {
         alertWsRef.current = null;
       }
     };
-  }, [view, notificationSent]);
+  }, [view, rightPanel, notificationSent]);
 
   // ── Request notification permission (web only) ──
   useEffect(() => {
@@ -761,8 +764,9 @@ export function App() {
 
   return (
     <div className="h-screen w-screen bg-[#09090b] text-[#fafafa] font-sans">
-      <Sidebar view={view} onViewChange={setView} isOpen={sidebarOpen} alertCount={alerts.length} />
-      <div className={`h-full ${sidebarOpen ? 'ml-14' : ''}`}>
+      <Sidebar view={view} onViewChange={setView} isOpen={sidebarOpen} />
+      <RightSidebar activePanel={rightPanel} onPanelChange={setRightPanel} alertCount={alerts.length} />
+      <div className={`h-full ${sidebarOpen ? 'ml-14' : ''} mr-14`}>
       <Header
         simState={simState}
         isConnected={isConnected}
@@ -1085,27 +1089,6 @@ export function App() {
         </div>
       )}
 
-      {view === 'script' && (
-        <AIChat 
-          symbol={activeSymbol.replace('/', '')} 
-          timeframe={formatTimeframe(timeframe)}
-          onApplyCode={handleApplyCode}
-        />
-      )}
-
-      {view === 'alerts' && (
-        <div className="h-[calc(100vh-56px)]">
-          <AlertsList
-            alerts={alerts}
-            webhookLogs={webhookLogs}
-            onAdd={handleAddAlert}
-            onEdit={handleEditAlert}
-            onDelete={handleDeleteAlert}
-            onToggle={handleToggleAlert}
-          />
-        </div>
-      )}
-
       {view === 'platforms' && (
         <PlatformsPage
           connections={platformConnections}
@@ -1188,6 +1171,26 @@ export function App() {
           ))}
         </div>
       )}
+
+      <SlidePanel isOpen={rightPanel !== null} onClose={() => setRightPanel(null)}>
+        {rightPanel === 'script' && (
+          <AIChat 
+            symbol={activeSymbol.replace('/', '')} 
+            timeframe={formatTimeframe(timeframe)}
+            onApplyCode={handleApplyCode}
+          />
+        )}
+        {rightPanel === 'alerts' && (
+          <AlertsList
+            alerts={alerts}
+            webhookLogs={webhookLogs}
+            onAdd={handleAddAlert}
+            onEdit={handleEditAlert}
+            onDelete={handleDeleteAlert}
+            onToggle={handleToggleAlert}
+          />
+        )}
+      </SlidePanel>
 
       {/* Backtest Overlay Toggle */}
       {(backtestResult || backtestTradesState.length > 0) && view === 'trade' && (
