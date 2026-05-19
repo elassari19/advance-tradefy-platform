@@ -45,7 +45,7 @@ export const OrderPanel: React.FC<OrderPanelProps> = ({ balance, onPlaceOrder, s
           <button
             onClick={() => setOrderType('MARKET')}
             className={`py-2 rounded-lg font-bold text-xs transition-all active:scale-95 ${orderType === 'MARKET'
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+                ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20'
                 : 'bg-zinc-900 border border-zinc-800 text-zinc-500 hover:bg-zinc-800'
               }`}
           >
@@ -60,7 +60,7 @@ export const OrderPanel: React.FC<OrderPanelProps> = ({ balance, onPlaceOrder, s
               type="number"
               value={quantity}
               onChange={(e) => setQuantity(parseFloat(e.target.value))}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-lg font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-lg font-mono focus:outline-none focus:ring-1 focus:ring-primary"
             />
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 text-xs font-mono">{symbol.replace('USDT', '')}</span>
           </div>
@@ -115,7 +115,7 @@ export const OrderPanel: React.FC<OrderPanelProps> = ({ balance, onPlaceOrder, s
           <span className="text-zinc-300 font-mono">${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
         </div>
         <div className="w-full bg-zinc-800 h-1.5 rounded-full mt-3 overflow-hidden">
-          <div className="bg-blue-600 h-full w-full"></div>
+          <div className="bg-primary h-full w-full"></div>
         </div>
       </div>
     </aside>

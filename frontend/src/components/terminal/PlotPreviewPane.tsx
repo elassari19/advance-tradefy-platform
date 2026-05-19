@@ -46,7 +46,7 @@ export const PlotPreviewPane: React.FC<PlotPreviewPaneProps> = ({ plots }) => {
     chartRef.current = chart;
 
     const lineSeries = chart.addSeries(LineSeries, {
-      color: '#3b82f6',
+      color: '#bfff1d',
       lineWidth: 1,
       lastValueVisible: false,
       priceLineVisible: false,
@@ -82,7 +82,7 @@ export const PlotPreviewPane: React.FC<PlotPreviewPaneProps> = ({ plots }) => {
   return (
     <div className="border-t border-zinc-800 bg-zinc-900/30">
       <div className="px-4 py-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
-        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+        <span className="w-1.5 h-1.5 rounded-full bg-primary" />
         Plot Preview
       </div>
       <div ref={containerRef} className="w-full" />

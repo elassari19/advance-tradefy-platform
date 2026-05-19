@@ -390,7 +390,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ symbol, code, isActive, 
                 ? 'bg-green-600 text-white' 
                 : status === 'error'
                 ? 'bg-red-600 text-white'
-                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'
+                : 'bg-primary hover:bg-primary/80 text-primary-foreground shadow-lg shadow-primary/20'
             } disabled:opacity-50`}
           >
             {status === 'loading' ? (
@@ -459,7 +459,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ symbol, code, isActive, 
                 <button
                   onClick={handleSaveConfirm}
                   disabled={!saveName.trim()}
-                  className="px-3 py-1.5 rounded text-[10px] font-bold bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50"
+                  className="px-3 py-1.5 rounded text-[10px] font-bold bg-primary hover:bg-primary/80 text-primary-foreground disabled:opacity-50"
                 >
                   Save
                 </button>

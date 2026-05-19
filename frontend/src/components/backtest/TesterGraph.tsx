@@ -90,7 +90,7 @@ export const TesterGraph: React.FC<TesterGraphProps> = ({ result }) => {
 
     // Chart 1: Balance + Equity
     const bc = makeChart(balanceRef.current, 180);
-    const bs = bc.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 2 });
+    const bs = bc.addSeries(LineSeries, { color: '#bfff1d', lineWidth: 2 });
     bs.setData(balanceData);
     const es = bc.addSeries(LineSeries, { color: '#22c55e', lineWidth: 2 });
     es.setData(equityData);
@@ -235,7 +235,7 @@ export const TesterGraph: React.FC<TesterGraphProps> = ({ result }) => {
     const ddData = equity_curve.map((p: EquityPoint) => ({ time: p.time as any, value: p.drawdown_pct }));
     const histData = trades.map(t => ({ time: t.closed_at as any, value: Math.abs(t.pnl), color: t.pnl >= 0 ? '#22c55e' : '#ef4444' }));
 
-    cloneChart(balanceData, 'line', '#3b82f6', 180, ['#22c55e', equityData]);
+    cloneChart(balanceData, 'line', '#bfff1d', 180, ['#22c55e', equityData]);
     cloneChart(ddData, 'area', '#ef4444', 120);
     cloneChart(histData, 'histogram', '', 100);
 
@@ -273,7 +273,7 @@ export const TesterGraph: React.FC<TesterGraphProps> = ({ result }) => {
 
       <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-2 space-y-1 relative">
         <div className="flex items-center gap-4 text-[10px] text-zinc-500 px-1">
-          <span><span className="inline-block w-3 h-0.5 bg-blue-500 align-middle mr-1" /> Balance</span>
+          <span><span className="inline-block w-3 h-0.5 bg-primary align-middle mr-1" /> Balance</span>
           <span><span className="inline-block w-3 h-0.5 bg-green-500 align-middle mr-1" /> Equity</span>
         </div>
         <div ref={balanceRef} className="w-full" />
@@ -307,7 +307,7 @@ export const TesterGraph: React.FC<TesterGraphProps> = ({ result }) => {
           <div className="space-y-0.5">
             <div className="flex justify-between gap-4">
               <span className="text-zinc-500">Balance:</span>
-              <span className="text-blue-400 font-bold">${tooltip.balance}</span>
+              <span className="text-primary font-bold">${tooltip.balance}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-zinc-500">Drawdown:</span>

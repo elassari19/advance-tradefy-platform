@@ -72,7 +72,7 @@ export const DrawingProperties: React.FC<DrawingPropertiesProps> = ({
               <button
                 key={w}
                 onClick={() => onBorderWidthChange(w)}
-                className={`px-2 py-0.5 rounded text-xs ${borderWidth === w ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}
+                className={`px-2 py-0.5 rounded text-xs ${borderWidth === w ? 'bg-primary text-primary-foreground' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}
               >
                 {w}
               </button>
@@ -85,7 +85,7 @@ export const DrawingProperties: React.FC<DrawingPropertiesProps> = ({
             <div className="text-[10px] text-zinc-500 mb-1">Fill</div>
             <button
               onClick={() => onFillColorChange(fillColor === 'none' ? 'rgba(139,92,246,0.15)' : 'none')}
-              className={`px-2 py-0.5 rounded text-xs ${fillColor !== 'none' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}
+              className={`px-2 py-0.5 rounded text-xs ${fillColor !== 'none' ? 'bg-primary text-primary-foreground' : 'bg-zinc-800 text-zinc-400'}`}
             >
               {fillColor !== 'none' ? 'On' : 'Off'}
             </button>
@@ -99,7 +99,7 @@ export const DrawingProperties: React.FC<DrawingPropertiesProps> = ({
               {onExtendLeftChange && (
                 <button
                   onClick={() => onExtendLeftChange(!extendLeft)}
-                  className={`px-2 py-0.5 rounded text-xs ${extendLeft ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}
+                  className={`px-2 py-0.5 rounded text-xs ${extendLeft ? 'bg-primary text-primary-foreground' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}
                 >
                   Left
                 </button>
@@ -107,7 +107,7 @@ export const DrawingProperties: React.FC<DrawingPropertiesProps> = ({
               {onExtendRightChange && (
                 <button
                   onClick={() => onExtendRightChange(!extendRight)}
-                  className={`px-2 py-0.5 rounded text-xs ${extendRight ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}
+                  className={`px-2 py-0.5 rounded text-xs ${extendRight ? 'bg-primary text-primary-foreground' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}
                 >
                   Right
                 </button>

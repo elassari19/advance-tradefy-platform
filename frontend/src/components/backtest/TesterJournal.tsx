@@ -9,7 +9,7 @@ interface TesterJournalProps {
 const EVENT_TYPES = ['info', 'signal', 'order_open', 'order_close', 'order_modify', 'tp_hit', 'sl_hit', 'error'];
 
 const EVENT_COLORS: Record<string, string> = {
-  info: 'text-blue-400',
+  info: 'text-primary',
   signal: 'text-orange-400',
   order_open: 'text-green-400',
   order_close: 'text-red-400',
@@ -165,7 +165,7 @@ export const TesterJournal: React.FC<TesterJournalProps> = ({ events }) => {
             type="checkbox"
             checked={autoScroll}
             onChange={e => setAutoScroll(e.target.checked)}
-            className="accent-blue-500"
+            className="accent-primary"
           />
           Auto-scroll
         </label>

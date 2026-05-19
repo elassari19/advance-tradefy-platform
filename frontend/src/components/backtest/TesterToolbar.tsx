@@ -83,7 +83,7 @@ export const TesterToolbar: React.FC<TesterToolbarProps> = ({
                 disabled={!running}
                 className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all disabled:opacity-30 ${
                   speed === s
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
                 }`}
               >
@@ -98,7 +98,7 @@ export const TesterToolbar: React.FC<TesterToolbarProps> = ({
         <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
           <div
             className={`h-full transition-all duration-200 rounded-full ${
-              paused ? 'bg-amber-500' : running ? 'bg-blue-500' : 'bg-zinc-700'
+              paused ? 'bg-amber-500' : running ? 'bg-primary' : 'bg-zinc-700'
             }`}
             style={{ width: `${Math.min(100, progress * 100)}%` }}
           />

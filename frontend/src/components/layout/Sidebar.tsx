@@ -23,7 +23,7 @@ export function Sidebar({ view, onViewChange, isOpen, alertCount }: SidebarProps
           onClick={() => onViewChange(id)}
           className={`relative flex items-center justify-center w-9 h-9 rounded-lg transition-all ${
             view === id
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+              ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20'
               : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
           }`}
           title={label}

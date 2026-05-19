@@ -43,7 +43,7 @@ export function AlertsList({ alerts, webhookLogs, onAdd, onEdit, onDelete, onTog
           </button>
           <button
             onClick={onAdd}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/80 text-primary-foreground rounded text-xs font-semibold transition-colors"
           >
             <Plus size={14} />
             New Alert

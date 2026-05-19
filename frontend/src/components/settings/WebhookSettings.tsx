@@ -79,7 +79,7 @@ export function WebhookSettings({ isOpen, onClose, webhooks, onSaveWebhooks }: W
                     type="text"
                     value={webhook.name}
                     onChange={(e) => handleUpdate(webhook.id, 'name', e.target.value)}
-                    className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary"
                     autoFocus
                   />
                 ) : (
@@ -128,7 +128,7 @@ export function WebhookSettings({ isOpen, onClose, webhooks, onSaveWebhooks }: W
                     value={webhook.url}
                     onChange={(e) => handleUpdate(webhook.id, 'url', e.target.value)}
                     placeholder="https://webhook.site/..."
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-xs font-mono text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-xs font-mono text-white focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
                 <div>
@@ -138,7 +138,7 @@ export function WebhookSettings({ isOpen, onClose, webhooks, onSaveWebhooks }: W
                     value={webhook.secret_token}
                     onChange={(e) => handleUpdate(webhook.id, 'secret_token', e.target.value)}
                     placeholder="Verification Key"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-xs font-mono text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-xs font-mono text-white focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
               </div>
@@ -164,7 +164,7 @@ export function WebhookSettings({ isOpen, onClose, webhooks, onSaveWebhooks }: W
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-500 transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-50"
           >
             {isSaving ? 'Saving...' : 'Save Changes'}
           </button>

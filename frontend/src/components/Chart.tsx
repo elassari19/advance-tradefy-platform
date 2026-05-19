@@ -99,7 +99,7 @@ const DrawingsLayer: React.FC<DrawingsLayerProps> = ({
     return (
       <div
         key={`${d.id}-anchor-${anchorId}`}
-        className="absolute rounded-full border-2 border-white bg-blue-500 cursor-n-resize z-30"
+        className="absolute rounded-full border-2 border-white bg-primary cursor-n-resize z-30"
         style={{
           left: cx - ANCHOR_SIZE / 2, top: cy - ANCHOR_SIZE / 2,
           width: ANCHOR_SIZE, height: ANCHOR_SIZE,
@@ -272,7 +272,7 @@ const DrawingsLayer: React.FC<DrawingsLayerProps> = ({
       const angle = Math.atan2(dy, dx) * (180 / Math.PI);
       if (activeTool === 'trend-line') {
         elements.push(
-          <div key="preview" className="absolute" style={{ left: x1, top: y1, width: len, height: 1, background: '#3b82f6', opacity: 0.6, transformOrigin: '0 0', transform: `rotate(${angle}deg)` }} />
+          <div key="preview" className="absolute" style={{ left: x1, top: y1, width: len, height: 1, background: '#bfff1d', opacity: 0.6, transformOrigin: '0 0', transform: `rotate(${angle}deg)` }} />
         );
       } else if (activeTool === 'metrics') {
         elements.push(
@@ -441,7 +441,7 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
           id: `drawing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           type: 'horizontal-line',
           points: [{ time: tp.time, price: tp.price }],
-          color: '#3b82f6',
+          color: '#bfff1d',
           borderWidth: 1.5,
         };
         saveDrawings([...currentDrawings, newDrawing]);
@@ -455,7 +455,7 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
             id: `drawing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             type: tool,
             points: [pending[0], tp],
-            color: tool === 'trend-line' ? '#3b82f6' : '#8b5cf6',
+            color: tool === 'trend-line' ? '#bfff1d' : '#8b5cf6',
             borderWidth: 1.5,
           };
           pendingRef.current = [];
@@ -812,11 +812,11 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
 
     if (chartType === 'area') {
       areaSeriesRef.current = chart.addSeries(AreaSeries, {
-        lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.4)', bottomColor: 'rgba(59, 130, 246, 0.0)', lineWidth: 2,
+        lineColor: '#bfff1d', topColor: 'rgba(191, 255, 29, 0.4)', bottomColor: 'rgba(191, 255, 29, 0.0)', lineWidth: 2,
       });
       activeSeriesRef.current = areaSeriesRef.current;
     } else if (chartType === 'line') {
-      lineSeriesRef.current = chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 2 });
+      lineSeriesRef.current = chart.addSeries(LineSeries, { color: '#bfff1d', lineWidth: 2 });
       activeSeriesRef.current = lineSeriesRef.current;
     } else if (chartType === 'candle') {
       candleSeriesRef.current = chart.addSeries(CandlestickSeries, {
@@ -1155,7 +1155,7 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
           onDrawingMouseDown={handleDrawingMouseDown}
         />
         {backtestCursorTime != null && (
-          <div ref={cursorRef} className="absolute top-0 bottom-0 w-[2px] bg-blue-500/60 pointer-events-none z-10" style={{ left: 0 }} />
+          <div ref={cursorRef} className="absolute top-0 bottom-0 w-[2px] bg-primary/60 pointer-events-none z-10" style={{ left: 0 }} />
         )}
       </div>
       {ctxDrawing && ctxMenu && (

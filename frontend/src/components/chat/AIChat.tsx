@@ -158,7 +158,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
                       if (e.key === 'Enter') handleFinishRename();
                       if (e.key === 'Escape') handleCancelRename();
                     }}
-                    className="flex-1 bg-zinc-700 border border-zinc-600 rounded px-1.5 py-0.5 text-xs text-white outline-none focus:ring-1 focus:ring-blue-500"
+                    className="flex-1 bg-zinc-700 border border-zinc-600 rounded px-1.5 py-0.5 text-xs text-white outline-none focus:ring-1 focus:ring-primary"
                   />
                   <button onClick={handleFinishRename} className="p-0.5 hover:text-green-400 shrink-0"><Check size={12} /></button>
                   <button onClick={handleCancelRename} className="p-0.5 hover:text-red-400 shrink-0"><X size={12} /></button>
@@ -169,7 +169,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
                   <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                     <button
                       onClick={(e) => handleStartRename(e, session.id, session.name)}
-                      className="p-0.5 hover:text-blue-400"
+                      className="p-0.5 hover:text-primary"
                       title="Rename"
                     >
                       <Edit3 size={12} />
@@ -236,7 +236,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
                     <button
                       key={model.id}
                       onClick={() => { setSelectedModel(model.id); setModelDropdownOpen(false); }}
-                      className={`w-full px-3 py-2 text-left text-xs hover:bg-zinc-800 transition-colors ${selectedModel === model.id ? 'bg-zinc-800 text-blue-400' : 'text-zinc-300'}`}
+                      className={`w-full px-3 py-2 text-left text-xs hover:bg-zinc-800 transition-colors ${selectedModel === model.id ? 'bg-zinc-800 text-primary' : 'text-zinc-300'}`}
                     >
                       <div className="font-medium">{model.name}</div>
                       <div className="text-zinc-500 text-[10px]">{model.provider}</div>
@@ -277,7 +277,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
           {/* Message List */}
           {currentMessages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`group relative max-w-[80%] rounded-lg p-4 ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-200'}`}>
+              <div className={`group relative max-w-[80%] rounded-lg p-4 ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-zinc-800 text-zinc-200'}`}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-medium opacity-70">{msg.role === 'user' ? 'You' : msg.model || 'Assistant'}</span>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -337,7 +337,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
                   </div>
                 </div>
                 <div className="text-sm whitespace-pre-wrap font-mono leading-relaxed">
-                  {currentContent}<span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-1" />
+                  {currentContent}<span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1" />
                 </div>
               </div>
             </div>
@@ -356,7 +356,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
               onKeyDown={handleKeyDown}
               placeholder="Ask me anything about trading, analysis, or strategy..."
               rows={1}
-              className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-zinc-500 resize-none min-h-[48px] max-h-[200px]"
+              className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary text-white placeholder-zinc-500 resize-none min-h-[48px] max-h-[200px]"
               disabled={isStreaming}
             />
             {isStreaming ? (
@@ -364,7 +364,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
                 <Square size={18} className="text-white" />
               </button>
             ) : (
-              <button type="submit" disabled={!input.trim()} className="p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:cursor-not-allowed rounded-lg transition-colors shrink-0">
+              <button type="submit" disabled={!input.trim()} className="p-3 bg-primary hover:bg-primary/80 disabled:bg-zinc-700 disabled:cursor-not-allowed rounded-lg transition-colors shrink-0">
                 <Send size={18} className="text-white" />
               </button>
             )}

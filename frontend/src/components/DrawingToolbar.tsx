@@ -96,7 +96,7 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
           onClick={() => onToolChange(tool)}
           className={`p-1.5 rounded transition-colors ${
             activeTool === tool
-              ? 'bg-blue-600 text-white shadow-sm'
+              ? 'bg-primary text-primary-foreground shadow-sm'
               : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
           }`}
           title={label}

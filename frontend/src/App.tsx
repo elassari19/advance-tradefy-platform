@@ -65,7 +65,7 @@ const BacktestChartPanel = ({
     return (
       <div className="flex-1 flex items-center justify-center bg-[#09090b]">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           <span className="text-sm text-zinc-500">Loading {symbol}...</span>
         </div>
       </div>
@@ -712,14 +712,14 @@ export function App() {
                   onClick={() => setShowIndicatorsModal(true)}
                   className={`flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-mono transition-colors border ${
                     currentIndicators.length > 0
-                      ? 'bg-blue-600/10 border-blue-500/30 text-blue-400'
+                      ? 'bg-primary/10 border-primary/30 text-primary'
                       : 'bg-zinc-800/50 hover:bg-zinc-700 border-zinc-700 text-zinc-300'
-                  }`}
-                >
-                  <BarChart3 size={14} />
-                  Indicators
-                  {currentIndicators.length > 0 && (
-                    <span className="ml-1 w-4 h-4 rounded-full bg-blue-500 text-[9px] font-bold text-white flex items-center justify-center">
+                    }`}
+                  >
+                    <BarChart3 size={14} />
+                    Indicators
+                    {currentIndicators.length > 0 && (
+                      <span className="ml-1 w-4 h-4 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
                       {currentIndicators.length}
                     </span>
                   )}
@@ -791,14 +791,14 @@ export function App() {
 
               {/* Drag handle */}
               <div
-                className="shrink-0 h-2 cursor-row-resize bg-transparent hover:bg-blue-500/20 active:bg-blue-500/30 relative flex items-center justify-center transition-colors group z-10"
+                className="shrink-0 h-2 cursor-row-resize bg-transparent hover:bg-primary/20 active:bg-primary/30 relative flex items-center justify-center transition-colors group z-10"
                 onMouseDown={() => {
                   draggingView.current = 'trade';
                   document.body.style.cursor = 'row-resize';
                   document.body.style.userSelect = 'none';
                 }}
               >
-                <div className="w-8 h-0.5 rounded-full bg-zinc-700 group-hover:bg-blue-400 transition-colors" />
+                <div className="w-8 h-0.5 rounded-full bg-zinc-700 group-hover:bg-primary transition-colors" />
               </div>
 
               {/* Bottom section: Terminal tabs */}
@@ -858,14 +858,14 @@ export function App() {
 
           {/* Drag handle */}
           <div
-            className="shrink-0 h-2 cursor-row-resize bg-transparent hover:bg-blue-500/20 active:bg-blue-500/30 relative flex items-center justify-center transition-colors group z-10"
+            className="shrink-0 h-2 cursor-row-resize bg-transparent hover:bg-primary/20 active:bg-primary/30 relative flex items-center justify-center transition-colors group z-10"
             onMouseDown={() => {
               draggingView.current = 'backtest';
               document.body.style.cursor = 'row-resize';
               document.body.style.userSelect = 'none';
             }}
           >
-            <div className="w-8 h-0.5 rounded-full bg-zinc-700 group-hover:bg-blue-400 transition-colors" />
+            <div className="w-8 h-0.5 rounded-full bg-zinc-700 group-hover:bg-primary transition-colors" />
           </div>
 
           {/* Bottom section: toolbar + tabs + content */}
@@ -918,7 +918,7 @@ export function App() {
                     onClick={() => setActiveTesterTab(tab.id)}
                     className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-r border-zinc-800 transition-colors whitespace-nowrap ${
                       isActive
-                        ? 'bg-zinc-900 text-white border-b-2 border-b-blue-500'
+                        ? 'bg-zinc-900 text-white border-b-2 border-b-primary'
                         : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
                     }`}
                   >
@@ -1077,7 +1077,7 @@ export function App() {
             orderPanelOpen ? 'right-[320px]' : 'right-4'
           } ${
             showBacktestOverlay
-              ? 'bg-blue-600/20 border-blue-500/40 text-blue-400'
+              ? 'bg-primary/20 border-primary/40 text-primary'
               : 'bg-zinc-800/80 border-zinc-700 text-zinc-400 hover:text-zinc-200'
           }`}
         >
@@ -1122,7 +1122,7 @@ function TabChart({
     return (
       <div className="flex-1 flex items-center justify-center bg-[#09090b]">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           <span className="text-sm text-zinc-500">Loading {symbol}...</span>
         </div>
       </div>

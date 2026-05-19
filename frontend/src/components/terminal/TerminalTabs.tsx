@@ -66,21 +66,21 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
       <div className="flex border-b border-zinc-800 bg-zinc-900/50">
         <button
           onClick={() => setActiveTab('positions')}
-          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${activeTab === 'positions' ? 'border-blue-500 text-blue-400 bg-blue-500/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'
+          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${activeTab === 'positions' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'
             }`}
         >
           Positions ({positions.length})
         </button>
         <button
           onClick={() => setActiveTab('history')}
-          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${activeTab === 'history' ? 'border-blue-500 text-blue-400 bg-blue-500/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'
+          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${activeTab === 'history' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'
             }`}
         >
           History ({history.length})
         </button>
         <button
           onClick={() => setActiveTab('strategy')}
-          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${activeTab === 'strategy' ? 'border-blue-500 text-blue-400 bg-blue-500/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'
+          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${activeTab === 'strategy' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'
             }`}
         >
           <Code2 size={14} />
@@ -89,7 +89,7 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('logs')}
-          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${activeTab === 'logs' ? 'border-blue-500 text-blue-400 bg-blue-500/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'
+          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${activeTab === 'logs' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'
             }`}
         >
           Logs
@@ -232,7 +232,7 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
                 onClick={() => setStrategySubTab('editor')}
                 className={`flex items-center gap-1.5 px-4 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b-2 ${
                   strategySubTab === 'editor'
-                    ? 'border-blue-500 text-blue-400 bg-blue-500/5'
+                    ? 'border-primary text-primary bg-primary/5'
                     : 'border-transparent text-zinc-500 hover:text-zinc-300'
                 }`}
               >
@@ -246,7 +246,7 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
                 }}
                 className={`flex items-center gap-1.5 px-4 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b-2 ${
                   strategySubTab === 'backtest'
-                    ? 'border-blue-500 text-blue-400 bg-blue-500/5'
+                    ? 'border-primary text-primary bg-primary/5'
                     : 'border-transparent text-zinc-500 hover:text-zinc-300'
                 }`}
               >
@@ -258,7 +258,7 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
                 onClick={() => setStrategySubTab('settings')}
                 className={`flex items-center gap-1.5 px-4 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b-2 ${
                   strategySubTab === 'settings'
-                    ? 'border-blue-500 text-blue-400 bg-blue-500/5'
+                    ? 'border-primary text-primary bg-primary/5'
                     : 'border-transparent text-zinc-500 hover:text-zinc-300'
                 }`}
               >

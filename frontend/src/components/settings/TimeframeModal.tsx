@@ -58,7 +58,7 @@ export function TimeframeModal({ isOpen, onClose, currentTimeframe, onSelect }: 
                 onClick={() => handleSelect(preset.value)}
                 className={`py-2.5 px-3 rounded-lg text-sm font-mono font-medium transition-all ${
                   currentTimeframe === preset.value
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
                 }`}
               >
@@ -78,13 +78,13 @@ export function TimeframeModal({ isOpen, onClose, currentTimeframe, onSelect }: 
                 placeholder="e.g. 7"
                 min="1"
                 max="1440"
-                className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm font-mono text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm font-mono text-white focus:outline-none focus:ring-1 focus:ring-primary"
                 onKeyDown={(e) => e.key === 'Enter' && handleCustomSubmit()}
               />
               <button
                 onClick={handleCustomSubmit}
                 disabled={!customValue || parseInt(customValue) <= 0 || parseInt(customValue) > 1440}
-                className="px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-500 transition-colors disabled:opacity-50"
+                className="px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-50"
               >
                 Apply
               </button>

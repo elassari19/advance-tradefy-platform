@@ -261,7 +261,7 @@ export function AlertCreator({ isOpen, onClose, onSave, editAlert }: AlertCreato
               <label className="text-xs text-zinc-400">Actions</label>
               <button
                 onClick={handleAddAction}
-                className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                className="flex items-center gap-1 text-xs text-primary hover:text-primary/80"
               >
                 <Plus size={12} /> Add Action
               </button>
@@ -339,7 +339,7 @@ export function AlertCreator({ isOpen, onClose, onSave, editAlert }: AlertCreato
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg transition-colors"
+            className="px-4 py-2 text-sm bg-primary hover:bg-primary/80 text-primary-foreground font-semibold rounded-lg transition-colors"
           >
             {editAlert ? 'Update Alert' : 'Create Alert'}
           </button>

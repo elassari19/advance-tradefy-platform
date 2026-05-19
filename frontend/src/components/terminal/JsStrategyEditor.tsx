@@ -36,7 +36,7 @@ export default {
         const sma20 = ctx.ta.sma(close, 20);
         const sma50 = ctx.ta.sma(close, 50);
 
-        ctx.plot(sma20, "SMA 20", "#3b82f6", "line");
+        ctx.plot(sma20, "SMA 20", "#bfff1d", "line");
         ctx.plot(sma50, "SMA 50", "#f59e0b", "line");
     }
 };

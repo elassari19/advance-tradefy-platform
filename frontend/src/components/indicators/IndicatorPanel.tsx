@@ -213,7 +213,7 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
           <div className="flex items-center gap-2.5">
-            <BarChart3 size={18} className="text-blue-400" />
+              <BarChart3 size={18} className="text-primary" />
             <h2 className="text-sm font-bold text-white">Indicators & Strategy</h2>
           </div>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition-colors">
@@ -228,7 +228,7 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
             <input
               type="text" value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="Search indicators..."
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg pl-9 pr-3 py-2 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg pl-9 pr-3 py-2 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
         </div>
@@ -243,7 +243,7 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
               onClick={closeAndOpenStrategy}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700/50 transition-colors text-left"
             >
-              <Code2 size={16} className="text-blue-400 shrink-0" />
+              <Code2 size={16} className="text-primary shrink-0" />
               <div>
                 <div className="text-xs font-semibold text-zinc-200">Deploy Strategy</div>
                 <div className="text-[10px] text-zinc-500">Write a Python trading script</div>
@@ -328,7 +328,7 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
                   })}
                   <button
                     onClick={() => { onClose(); onOpenCustomModal(); }}
-                    className="mt-1.5 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-zinc-700 text-xs text-blue-400 hover:bg-zinc-800/50 transition-colors"
+                    className="mt-1.5 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-zinc-700 text-xs text-primary hover:bg-zinc-800/50 transition-colors"
                   >
                     <Plus size={14} />
                     New Custom Indicator

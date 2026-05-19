@@ -297,7 +297,7 @@ function createAboutWindow() {
       padding: 24px;
       text-align: center;
     }
-    h1 { font-size: 20px; margin: 0 0 4px; color: #fafafa; }
+    h1 { font-size: 20px; margin: 0 0 4px; color: #bfff1d; }
     .version { font-size: 13px; color: #a1a1aa; margin-bottom: 20px; }
     .detail { font-size: 12px; color: #71717a; line-height: 1.8; }
     .footer { margin-top: auto; font-size: 11px; color: #52525b; }

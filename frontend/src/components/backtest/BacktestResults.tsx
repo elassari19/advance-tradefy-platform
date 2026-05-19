@@ -48,7 +48,7 @@ export const BacktestResults: React.FC<BacktestResultsProps> = ({ result, onSave
     });
 
     const series = chart.addSeries(LineSeries, {
-      color: '#3b82f6',
+      color: '#bfff1d',
       lineWidth: 2,
       priceFormat: { type: 'price', minMove: 0.01 } as any,
     });
@@ -135,7 +135,7 @@ export const BacktestResults: React.FC<BacktestResultsProps> = ({ result, onSave
 
   const cards = [
     { label: 'Net Profit', value: formatCurrency(summary.net_profit), sub: formatPct(summary.net_profit_pct), color: isProfitable ? 'text-green-400' : 'text-red-400', icon: DollarSign },
-    { label: 'Win Rate', value: summary.win_rate.toFixed(1) + '%', sub: `${summary.winning_trades}W / ${summary.losing_trades}L`, color: 'text-blue-400', icon: TrendingUp },
+    { label: 'Win Rate', value: summary.win_rate.toFixed(1) + '%', sub: `${summary.winning_trades}W / ${summary.losing_trades}L`, color: 'text-primary', icon: TrendingUp },
     { label: 'Profit Factor', value: summary.profit_factor.toFixed(2), sub: summary.profit_factor >= 1.5 ? 'Good' : summary.profit_factor >= 1 ? 'Acceptable' : 'Poor', color: summary.profit_factor >= 1.5 ? 'text-green-400' : summary.profit_factor >= 1 ? 'text-yellow-400' : 'text-red-400', icon: TrendingDown },
     { label: 'Sharpe Ratio', value: summary.sharpe_ratio.toFixed(2), sub: summary.sharpe_ratio >= 1 ? 'Good' : 'Below avg', color: summary.sharpe_ratio >= 1 ? 'text-green-400' : 'text-yellow-400', icon: TrendingUp },
     { label: 'Max Drawdown', value: formatCurrency(summary.max_drawdown), sub: formatPct(summary.max_drawdown_pct), color: 'text-red-400', icon: AlertTriangle },
@@ -167,7 +167,7 @@ export const BacktestResults: React.FC<BacktestResultsProps> = ({ result, onSave
           {onShowOnChart && (
             <button
               onClick={onShowOnChart}
-              className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold text-blue-400 hover:text-blue-300 bg-blue-900/20 hover:bg-blue-900/40 border border-blue-800/40 transition-all"
+              className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold text-primary hover:text-primary/80 bg-primary/20 hover:bg-primary/40 border border-primary/40 transition-all"
             >
               <TrendingUp size={12} />
               Show on Chart

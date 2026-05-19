@@ -148,7 +148,7 @@ export const VisualBacktestChart: React.FC<VisualBacktestChartProps> = ({
         {
           time: last.time as Time,
           position: 'inBar',
-          color: '#3b82f6',
+          color: '#bfff1d',
           shape: 'arrowUp',
           text: '',
           size: 0.5,
@@ -274,7 +274,7 @@ export const VisualBacktestChart: React.FC<VisualBacktestChartProps> = ({
     return (
       <div className="flex-1 flex items-center justify-center bg-[#09090b] rounded-lg border border-zinc-800 min-h-[300px]">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           <span className="text-sm text-zinc-500">Loading {symbol} data...</span>
         </div>
       </div>
@@ -285,7 +285,7 @@ export const VisualBacktestChart: React.FC<VisualBacktestChartProps> = ({
     <div className="bg-[#09090b] rounded-lg border border-zinc-800 overflow-hidden flex-1 min-h-0 relative">
       <div ref={containerRef} className="w-full h-full" />
       {cursorTime != null && (
-        <div className="absolute top-0 bottom-0 w-[2px] bg-blue-500/60 pointer-events-none z-10" style={{ left: '50%' }} />
+        <div className="absolute top-0 bottom-0 w-[2px] bg-primary/60 pointer-events-none z-10" style={{ left: '50%' }} />
       )}
       <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm rounded px-2 py-1 text-[10px] text-zinc-400 font-mono z-20">
         {symbol} · {visibleCandles.length}/{allCandles.length} bars

@@ -157,7 +157,7 @@ export const BacktestConfig: React.FC<BacktestConfigProps> = ({
             onClick={() => onLiveModeChange(!liveMode)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-bold border transition-all ${
               liveMode
-                ? 'bg-blue-600/20 border-blue-500/40 text-blue-400'
+                ? 'bg-primary/20 border-primary/40 text-primary'
                 : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
             }`}
           >
@@ -174,7 +174,7 @@ export const BacktestConfig: React.FC<BacktestConfigProps> = ({
                     onClick={() => onSpeedChange(s)}
                     className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all ${
                       speed === s
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-primary text-primary-foreground'
                         : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
@@ -218,7 +218,7 @@ export const BacktestConfig: React.FC<BacktestConfigProps> = ({
         <button
           onClick={handleRun}
           disabled={running}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-md text-xs font-bold text-white transition-all shadow-lg shadow-blue-500/20"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-primary/80 disabled:opacity-50 rounded-md text-xs font-bold text-primary-foreground transition-all shadow-lg shadow-primary/20"
         >
           {running ? (
             <Loader2 size={14} className="animate-spin" />

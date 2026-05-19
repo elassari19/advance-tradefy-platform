@@ -121,7 +121,7 @@ export const CustomIndicatorModal: React.FC<CustomIndicatorModalProps> = ({ isOp
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. My Momentum Oscillator"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-blue-500"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-primary"
             />
           </div>
 
@@ -133,7 +133,7 @@ export const CustomIndicatorModal: React.FC<CustomIndicatorModalProps> = ({ isOp
               <textarea
                 value={script}
                 onChange={(e) => setScript(e.target.value)}
-                className="w-full h-48 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-blue-500 resize-none"
+                className="w-full h-48 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-primary resize-none"
                 placeholder="# Write your indicator logic here..."
                 spellCheck={false}
               />
@@ -181,7 +181,7 @@ export const CustomIndicatorModal: React.FC<CustomIndicatorModalProps> = ({ isOp
             </button>
             <button
               onClick={handleSave}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition-colors"
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-bold text-primary-foreground bg-primary hover:bg-primary/80 transition-colors"
             >
               <Save size={12} />
               {editDef ? 'Update' : 'Save'} Indicator

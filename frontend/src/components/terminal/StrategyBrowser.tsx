@@ -109,7 +109,7 @@ export const StrategyBrowser: React.FC<StrategyBrowserProps> = ({ isOpen, onClos
             <button
               onClick={() => { setShowNew(!showNew); setSearch(''); }}
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded text-[10px] font-bold transition-all border ${
-                showNew ? 'bg-blue-600/10 border-blue-500/30 text-blue-400' : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700'
+                showNew ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700'
               }`}
             >
               <Plus size={12} />
@@ -176,7 +176,7 @@ export const StrategyBrowser: React.FC<StrategyBrowserProps> = ({ isOpen, onClos
               <button
                 onClick={handleSave}
                 disabled={saving || !newName.trim() || !newCode.trim()}
-                className="flex items-center gap-1 px-3 py-1.5 rounded text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 transition-all"
+                className="flex items-center gap-1 px-3 py-1.5 rounded text-[10px] font-bold text-primary-foreground bg-primary hover:bg-primary/80 disabled:opacity-50 transition-all"
               >
                 {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
                 {saving ? 'Saving...' : 'Save Strategy'}
@@ -229,7 +229,7 @@ export const StrategyBrowser: React.FC<StrategyBrowserProps> = ({ isOpen, onClos
                   </button>
                   <button
                     onClick={() => handleLoad(s)}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded text-[10px] font-bold bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+                    className="flex items-center gap-1 px-3 py-1.5 rounded text-[10px] font-bold bg-primary hover:bg-primary/80 text-primary-foreground transition-colors"
                   >
                     <Download size={10} />
                     Load

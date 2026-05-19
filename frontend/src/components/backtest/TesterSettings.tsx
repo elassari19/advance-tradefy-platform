@@ -132,7 +132,7 @@ export const TesterSettings: React.FC<TesterSettingsProps> = ({ strategyCode, on
                 onClick={() => handlePeriodPreset(p.value)}
                 className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${
                   periodPreset === p.value
-                    ? 'bg-blue-600/20 border border-blue-500/40 text-blue-400'
+                    ? 'bg-primary/20 border border-primary/40 text-primary'
                     : 'bg-zinc-950 border border-zinc-800 text-zinc-500 hover:text-zinc-300'
                 }`}
               >
@@ -236,7 +236,7 @@ export const TesterSettings: React.FC<TesterSettingsProps> = ({ strategyCode, on
                 onChange={e => setVisualMode(e.target.checked)}
                 className="sr-only peer"
               />
-              <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
+              <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary" />
             </label>
           </div>
           {visualMode && (
@@ -249,7 +249,7 @@ export const TesterSettings: React.FC<TesterSettingsProps> = ({ strategyCode, on
                     onClick={() => setVisualSpeed(s)}
                     className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-bold transition-all ${
                       visualSpeed === s
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-primary text-primary-foreground'
                         : 'bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
@@ -265,7 +265,7 @@ export const TesterSettings: React.FC<TesterSettingsProps> = ({ strategyCode, on
           <button
             onClick={handleRun}
             disabled={running}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-bold text-white transition-all shadow-lg shadow-blue-500/20"
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary hover:bg-primary/80 disabled:opacity-50 rounded-lg text-sm font-bold text-primary-foreground transition-all shadow-lg shadow-primary/20"
           >
             {running ? (
               <Loader2 size={15} className="animate-spin" />
