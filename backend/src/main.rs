@@ -1253,9 +1253,10 @@ async fn list_backtests(
 
     match sqlx::query(
         r#"
-        SELECT id, strategy_name, symbol, timeframe, initial_balance, final_balance, net_profit, total_trades,
-               win_rate, gross_profit, gross_loss, profit_factor, max_drawdown_pct, sharpe_ratio, sortino_ratio,
-               testing_mode, modeling_quality, created_at
+         SELECT id, strategy_name, symbol, timeframe, initial_balance, final_balance, net_profit, total_trades,
+                win_rate, gross_profit, gross_loss, profit_factor, max_drawdown_pct, sharpe_ratio, sortino_ratio,
+                calmar_ratio, recovery_factor, expected_payoff, max_consecutive_wins, max_consecutive_losses,
+                testing_mode, modeling_quality, created_at
         FROM backtest_results
         ORDER BY created_at DESC
         LIMIT 50
@@ -1283,6 +1284,11 @@ async fn list_backtests(
                     "max_drawdown_pct": r.try_get::<f64, _>("max_drawdown_pct").unwrap_or(0.0),
                     "sharpe_ratio": r.try_get::<f64, _>("sharpe_ratio").unwrap_or(0.0),
                     "sortino_ratio": r.try_get::<f64, _>("sortino_ratio").unwrap_or(0.0),
+                    "calmar_ratio": r.try_get::<f64, _>("calmar_ratio").unwrap_or(0.0),
+                    "recovery_factor": r.try_get::<f64, _>("recovery_factor").unwrap_or(0.0),
+                    "expected_payoff": r.try_get::<f64, _>("expected_payoff").unwrap_or(0.0),
+                    "max_consecutive_wins": r.try_get::<i32, _>("max_consecutive_wins").unwrap_or(0),
+                    "max_consecutive_losses": r.try_get::<i32, _>("max_consecutive_losses").unwrap_or(0),
                     "testing_mode": r.try_get::<String, _>("testing_mode").unwrap_or_default(),
                     "modeling_quality": r.try_get::<f64, _>("modeling_quality").unwrap_or(0.0),
                     "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
