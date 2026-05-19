@@ -258,6 +258,20 @@ pub struct BacktestRequest {
     pub initial_balance: f64,
     pub commission: f64,
     pub slippage: f64,
+    #[serde(default = "default_speed")]
+    pub speed: u32,
+}
+
+fn default_speed() -> u32 { 1 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BacktestProgress {
+    pub progress: f64,
+    pub trades: Vec<BacktestTrade>,
+    pub equity_curve: Vec<EquityPoint>,
+    pub done: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<BacktestResultSummary>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

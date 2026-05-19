@@ -11,6 +11,7 @@ export interface BacktestRequest {
   initial_balance: number;
   commission: number;
   slippage: number;
+  speed?: number;
 }
 
 export interface BacktestTrade {

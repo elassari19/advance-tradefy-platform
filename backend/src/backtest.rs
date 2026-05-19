@@ -1,10 +1,14 @@
 use crate::models::{
-    BacktestRequest, BacktestResult, BacktestResultSummary, BacktestTrade,
+    BacktestProgress, BacktestRequest, BacktestResult, BacktestResultSummary, BacktestTrade,
     Candle, EquityPoint, OptimizeRequest, OptimizationResult, OrderRequest, TradeSide,
 };
 use crate::python_runtime::PythonRuntime;
 use crate::simulator::SimulatorEngine;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::mpsc::UnboundedSender;
 
 pub struct BacktestEngine {
     pub request: BacktestRequest,
@@ -87,7 +91,32 @@ impl BacktestEngine {
         self.execute_with_candles(candles)
     }
 
-    fn execute_with_candles(&self, candles: Vec<Candle>) -> Result<BacktestResult, String> {
+    pub fn execute_with_candles(&self, candles: Vec<Candle>) -> Result<BacktestResult, String> {
+        let speed = Arc::new(AtomicU32::new(1));
+        let paused = Arc::new(AtomicBool::new(false));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        self.execute_with_candles_impl(candles, None, speed, Some(paused), Some(cancelled))
+    }
+
+    pub fn execute_with_candles_streaming(
+        &self,
+        candles: Vec<Candle>,
+        progress_tx: UnboundedSender<BacktestProgress>,
+        speed: Arc<AtomicU32>,
+        paused: Arc<AtomicBool>,
+        cancelled: Arc<AtomicBool>,
+    ) -> Result<BacktestResult, String> {
+        self.execute_with_candles_impl(candles, Some(progress_tx), speed, Some(paused), Some(cancelled))
+    }
+
+    fn execute_with_candles_impl(
+        &self,
+        candles: Vec<Candle>,
+        progress_tx: Option<UnboundedSender<BacktestProgress>>,
+        speed: Arc<AtomicU32>,
+        paused: Option<Arc<AtomicBool>>,
+        cancelled: Option<Arc<AtomicBool>>,
+    ) -> Result<BacktestResult, String> {
         if candles.is_empty() {
             return Err("No candles provided for backtest execution".to_string());
         }
@@ -97,8 +126,27 @@ impl BacktestEngine {
 
         let mut equity_curve = Vec::with_capacity(candles.len());
         let mut bar_index = 0u32;
+        let total = candles.len();
+        let mut all_trades: Vec<BacktestTrade> = Vec::new();
 
-        for candle in &candles {
+        for (idx, candle) in candles.iter().enumerate() {
+            // Check for pause/stop
+            if let Some(ref paused) = paused {
+                while paused.load(Ordering::Relaxed) {
+                    if let Some(ref cancelled) = cancelled {
+                        if cancelled.load(Ordering::Relaxed) {
+                            return Err("Backtest cancelled by user".to_string());
+                        }
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            }
+            if let Some(ref cancelled) = cancelled {
+                if cancelled.load(Ordering::Relaxed) {
+                    return Err("Backtest cancelled by user".to_string());
+                }
+            }
+
             let state = engine.get_state();
             let pos = state.open_positions.iter().find(|p| p.symbol == self.request.symbol);
             let (pos_size, pos_avg, equity) = match pos {
@@ -107,7 +155,9 @@ impl BacktestEngine {
             };
             runtime.set_position_state(pos_size, pos_avg, equity);
 
-            let _ = runtime.execute_on_candle(&self.request.strategy_code, candle);
+            if let Err(e) = runtime.execute_on_candle(&self.request.strategy_code, candle) {
+                tracing::warn!("Backtest Python error at candle {}: {}", idx, e);
+            }
 
             if let Some(signal) = runtime.get_signal() {
                 match signal.action.as_str() {
@@ -169,35 +219,49 @@ impl BacktestEngine {
             });
 
             bar_index += 1;
+
+            all_trades = state.history.iter().map(|t| {
+                BacktestTrade {
+                    id: t.id.clone(),
+                    side: format!("{:?}", t.side),
+                    entry_price: t.entry_price,
+                    exit_price: t.exit_price,
+                    quantity: t.quantity,
+                    pnl: t.pnl,
+                    pnl_pct: if t.entry_price > 0.0 {
+                        (t.pnl / (t.entry_price * t.quantity)) * 100.0
+                    } else {
+                        0.0
+                    },
+                    opened_at: t.opened_at,
+                    closed_at: t.closed_at,
+                    exit_reason: t.exit_reason.clone(),
+                    holding_bars: 0,
+                    take_profit: t.take_profit,
+                    stop_loss: t.stop_loss,
+                }
+            }).collect();
+
+            if let Some(ref tx) = progress_tx {
+                let current_speed = speed.load(Ordering::Relaxed).max(1) as usize;
+                if idx % current_speed == 0 || idx == total - 1 {
+                    let p = idx as f64 / total as f64;
+                    let _ = tx.send(BacktestProgress {
+                        progress: p,
+                        trades: all_trades.clone(),
+                        equity_curve: equity_curve.clone(),
+                        done: false,
+                        summary: None,
+                    });
+                }
+            }
         }
 
+        // Compute summary from final engine state
         let state = engine.get_state();
-        let trades: Vec<BacktestTrade> = state.history.iter().map(|t| {
-            let holding_bars = 0u64;
-            BacktestTrade {
-                id: t.id.clone(),
-                side: format!("{:?}", t.side),
-                entry_price: t.entry_price,
-                exit_price: t.exit_price,
-                quantity: t.quantity,
-                pnl: t.pnl,
-                pnl_pct: if t.entry_price > 0.0 {
-                    (t.pnl / (t.entry_price * t.quantity)) * 100.0
-                } else {
-                    0.0
-                },
-                opened_at: t.opened_at,
-                closed_at: t.closed_at,
-                exit_reason: t.exit_reason.clone(),
-                holding_bars,
-                take_profit: t.take_profit,
-                stop_loss: t.stop_loss,
-            }
-        }).collect();
-
-        let total_trades = trades.len() as u32;
-        let winning_trades = trades.iter().filter(|t| t.pnl > 0.0).count() as u32;
-        let losing_trades = trades.iter().filter(|t| t.pnl <= 0.0).count() as u32;
+        let total_trades = all_trades.len() as u32;
+        let winning_trades = all_trades.iter().filter(|t| t.pnl > 0.0).count() as u32;
+        let losing_trades = all_trades.iter().filter(|t| t.pnl <= 0.0).count() as u32;
         let win_rate = if total_trades > 0 {
             (winning_trades as f64 / total_trades as f64) * 100.0
         } else {
@@ -211,8 +275,8 @@ impl BacktestEngine {
             0.0
         };
 
-        let wins: Vec<&BacktestTrade> = trades.iter().filter(|t| t.pnl > 0.0).collect();
-        let losses: Vec<&BacktestTrade> = trades.iter().filter(|t| t.pnl <= 0.0).collect();
+        let wins: Vec<&BacktestTrade> = all_trades.iter().filter(|t| t.pnl > 0.0).collect();
+        let losses: Vec<&BacktestTrade> = all_trades.iter().filter(|t| t.pnl <= 0.0).collect();
 
         let avg_win = if !wins.is_empty() {
             wins.iter().map(|t| t.pnl).sum::<f64>() / wins.len() as f64
@@ -256,7 +320,7 @@ impl BacktestEngine {
         let equity_values: Vec<f64> = equity_curve.iter().map(|e| e.equity).collect();
         let sharpe_ratio = compute_sharpe_ratio(&equity_values, self.request.initial_balance);
 
-        let total_holding: u64 = trades.iter().map(|t| t.holding_bars).sum();
+        let total_holding: u64 = all_trades.iter().map(|t| t.holding_bars).sum();
         let avg_holding_bars = if total_trades > 0 {
             total_holding as f64 / total_trades as f64
         } else {
@@ -282,6 +346,41 @@ impl BacktestEngine {
             largest_loss,
             avg_holding_bars,
         };
+
+        // Send final done progress if streaming (with full summary)
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send(BacktestProgress {
+                progress: 1.0,
+                trades: all_trades.clone(),
+                equity_curve: equity_curve.clone(),
+                done: true,
+                summary: Some(summary.clone()),
+            });
+        }
+
+        // Rebuild trades from final engine state for the result
+        let trades: Vec<BacktestTrade> = state.history.iter().map(|t| {
+            let holding_bars = 0u64;
+            BacktestTrade {
+                id: t.id.clone(),
+                side: format!("{:?}", t.side),
+                entry_price: t.entry_price,
+                exit_price: t.exit_price,
+                quantity: t.quantity,
+                pnl: t.pnl,
+                pnl_pct: if t.entry_price > 0.0 {
+                    (t.pnl / (t.entry_price * t.quantity)) * 100.0
+                } else {
+                    0.0
+                },
+                opened_at: t.opened_at,
+                closed_at: t.closed_at,
+                exit_reason: t.exit_reason.clone(),
+                holding_bars,
+                take_profit: t.take_profit,
+                stop_loss: t.stop_loss,
+            }
+        }).collect();
 
         Ok(BacktestResult {
             summary,
@@ -366,6 +465,7 @@ pub async fn run_optimization(request: &OptimizeRequest) -> Result<Vec<Optimizat
             initial_balance: request.initial_balance,
             commission: request.commission,
             slippage: request.slippage,
+            speed: 1,
         };
 
         let engine = BacktestEngine::new(bt_req);
@@ -404,14 +504,14 @@ mod tests {
     }
 
     fn never_trade() -> String {
-        "def on_tick(price, open, high, low, close, volume): pass".into()
+        "def on_tick(price, candles): pass".into()
     }
 
     #[test]
     fn test_empty_candles_returns_error() {
         let req = BacktestRequest {
             strategy_code: never_trade(), symbol: "BTCUSDT".into(), timeframe: "1m".into(),
-            start_time: 0, end_time: 0, initial_balance: 10000.0, commission: 0.001, slippage: 0.0001,
+            start_time: 0, end_time: 0, initial_balance: 10000.0, commission: 0.001, slippage: 0.0001, speed: 1,
         };
         let engine = BacktestEngine::new(req);
         let result = engine.execute_with_candles(vec![]);
@@ -423,7 +523,7 @@ mod tests {
         let candles = make_test_candles();
         let req = BacktestRequest {
             strategy_code: never_trade(), symbol: "BTCUSDT".into(), timeframe: "1m".into(),
-            start_time: 0, end_time: 2999, initial_balance: 10000.0, commission: 0.001, slippage: 0.0001,
+            start_time: 0, end_time: 2999, initial_balance: 10000.0, commission: 0.001, slippage: 0.0001, speed: 1,
         };
         let engine = BacktestEngine::new(req);
         let result = engine.execute_with_candles(candles);
@@ -473,7 +573,7 @@ mod tests {
         let candles = make_test_candles();
         let req = BacktestRequest {
             strategy_code: never_trade(), symbol: "BTCUSDT".into(), timeframe: "1m".into(),
-            start_time: 0, end_time: 2999, initial_balance: 10000.0, commission: 0.001, slippage: 0.0001,
+            start_time: 0, end_time: 2999, initial_balance: 10000.0, commission: 0.001, slippage: 0.0001, speed: 1,
         };
         let engine = BacktestEngine::new(req);
         let result = engine.execute_with_candles(candles).unwrap();

@@ -1,18 +1,32 @@
 import React, { useState } from 'react';
-import { Play, Loader2, FolderOpen, FileCode } from 'lucide-react';
+import { Play, Loader2, FolderOpen, FileCode, Radio, Pause, Square, PlayIcon } from 'lucide-react';
 import type { BacktestRequest } from '../../hooks/useBacktest';
 
 const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT', 'ADA/USDT', 'DOGE/USDT', 'DOT/USDT'];
 const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
+const SPEED_OPTIONS = [1, 10, 50, 100, 500];
 
 interface BacktestConfigProps {
   strategyCode: string;
   onRun: (req: BacktestRequest) => void;
   running: boolean;
   onLoadStrategy: () => void;
+  liveMode?: boolean;
+  onLiveModeChange?: (v: boolean) => void;
+  speed?: number;
+  onSpeedChange?: (v: number) => void;
+  liveRunning?: boolean;
+  livePaused?: boolean;
+  onPause?: () => void;
+  onContinue?: () => void;
+  onStop?: () => void;
 }
 
-export const BacktestConfig: React.FC<BacktestConfigProps> = ({ strategyCode, onRun, running, onLoadStrategy }) => {
+export const BacktestConfig: React.FC<BacktestConfigProps> = ({
+  strategyCode, onRun, running, onLoadStrategy,
+  liveMode, onLiveModeChange, speed = 1, onSpeedChange,
+  liveRunning, livePaused, onPause, onContinue, onStop,
+}) => {
   const now = new Date();
   const defaultEnd = now.toISOString().split('T')[0];
   const defaultStart = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -37,6 +51,7 @@ export const BacktestConfig: React.FC<BacktestConfigProps> = ({ strategyCode, on
       initial_balance: parseFloat(initialCapital) || 10000,
       commission: (parseFloat(commission) || 0.1) / 100,
       slippage: (parseFloat(slippage) || 0.01) / 100,
+      speed,
     });
   };
 
@@ -136,18 +151,83 @@ export const BacktestConfig: React.FC<BacktestConfigProps> = ({ strategyCode, on
         </div>
       </div>
 
-      <button
-        onClick={handleRun}
-        disabled={running}
-        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-md text-xs font-bold text-white transition-all shadow-lg shadow-blue-500/20"
-      >
-        {running ? (
-          <Loader2 size={14} className="animate-spin" />
-        ) : (
-          <Play size={14} fill="currentColor" />
-        )}
-        {running ? 'Running Backtest...' : 'Run Backtest'}
-      </button>
+      {onLiveModeChange && onSpeedChange && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => onLiveModeChange(!liveMode)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-bold border transition-all ${
+              liveMode
+                ? 'bg-blue-600/20 border-blue-500/40 text-blue-400'
+                : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Radio size={12} className={liveMode ? 'animate-pulse' : ''} />
+            Live Chart
+          </button>
+          {liveMode && (
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Speed</span>
+              <div className="flex gap-0.5">
+                {SPEED_OPTIONS.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => onSpeedChange(s)}
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all ${
+                      speed === s
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {liveRunning ? (
+        <div className="flex gap-2">
+          {livePaused ? (
+            <button
+              onClick={onContinue}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 rounded-md text-xs font-bold text-white transition-all shadow-lg shadow-green-500/20"
+            >
+              <PlayIcon size={14} />
+              Continue
+            </button>
+          ) : (
+            <button
+              onClick={onPause}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-xs font-bold text-white transition-all shadow-lg shadow-amber-500/20"
+            >
+              <Pause size={14} />
+              Pause
+            </button>
+          )}
+          <button
+            onClick={onStop}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 rounded-md text-xs font-bold text-white transition-all shadow-lg shadow-red-500/20"
+          >
+            <Square size={14} />
+            End
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={handleRun}
+          disabled={running}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-md text-xs font-bold text-white transition-all shadow-lg shadow-blue-500/20"
+        >
+          {running ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Play size={14} fill="currentColor" />
+          )}
+          {running ? (liveMode ? 'Streaming Backtest...' : 'Running Backtest...') : 'Run Backtest'}
+        </button>
+      )}
     </div>
   );
 };

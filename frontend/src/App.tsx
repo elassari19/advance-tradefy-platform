@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { X, Plus, ChevronDown, BarChart3, FlaskConical, AlertTriangle } from "lucide-react";
+import { X, Plus, ChevronDown, BarChart3, FlaskConical, AlertTriangle, Loader2, Radio, Pause } from "lucide-react";
 import { useMarketDataForSymbol } from "./hooks/useMarketData";
 import { useSimulator } from "./hooks/useSimulator";
 import { useBacktest } from "./hooks/useBacktest";
@@ -74,6 +74,17 @@ export function App() {
   const [toasts, setToasts] = useState<Array<{id: string; message: string; type: 'error' | 'success' | 'info'}>>([]);
   const [showBacktestOverlay, setShowBacktestOverlay] = useState(false);
   const backtestTradesRef = useRef<BacktestTrade[]>([]);
+  const [backtestTradesState, setBacktestTradesState] = useState<BacktestTrade[]>([]);
+  const [backtestLiveMode, setBacktestLiveMode] = useState(false);
+  const [backtestSpeed, setBacktestSpeed] = useState(1);
+  const [liveBacktestProgress, setLiveBacktestProgress] = useState(0);
+  const [liveBacktestRunning, setLiveBacktestRunning] = useState(false);
+  const [liveBacktestPaused, setLiveBacktestPaused] = useState(false);
+  const [lastBacktestSymbol, setLastBacktestSymbol] = useState('');
+  const [lastBacktestTimeframe, setLastBacktestTimeframe] = useState('');
+  const [backtestTotalCandles, setBacktestTotalCandles] = useState(0);
+  const [backtestCursorTime, setBacktestCursorTime] = useState<number | undefined>(undefined);
+  const backtestWsRef = useRef<WebSocket | null>(null);
 
   // ── Alert State ──
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
@@ -235,14 +246,102 @@ export function App() {
   }, [activeSymbol]);
 
   const handleBacktestRun = useCallback(async (req: BacktestRequest) => {
-    const result = await runBacktest(req);
-    if (result) {
-      setBacktestResult(result);
-      backtestTradesRef.current = result.trades || [];
+    if (backtestLiveMode) {
+      setLiveBacktestRunning(true);
+      setLiveBacktestProgress(0);
+      backtestTradesRef.current = [];
+      setBacktestTradesState([]);
+      // Track backtest symbol/timeframe for chart display
+      setLastBacktestSymbol(req.symbol);
+      setLastBacktestTimeframe(req.timeframe);
       setShowBacktestOverlay(true);
-      addToast('Backtest completed successfully', 'success');
+
+      const ws = new WebSocket('ws://127.0.0.1:3000/ws/backtest');
+      backtestWsRef.current = ws;
+
+      ws.onopen = () => ws.send(JSON.stringify(req));
+
+      let finalTrades: BacktestTrade[] = [];
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'started') {
+            setBacktestTotalCandles(data.total_candles);
+            addToast(`Backtest started: ${data.total_candles} candles`, 'info');
+          } else if (data.type === 'progress') {
+            setLiveBacktestProgress(data.progress);
+            // Calculate cursor time from the latest equity_curve entry
+            if (data.equity_curve && data.equity_curve.length > 0) {
+              const last = data.equity_curve[data.equity_curve.length - 1];
+              setBacktestCursorTime(last.time);
+            }
+            if (data.trades) {
+              finalTrades = data.trades;
+              backtestTradesRef.current = data.trades;
+              setBacktestTradesState(data.trades);
+            }
+            if (data.done) {
+              setLiveBacktestRunning(false);
+              setLiveBacktestProgress(1);
+              setBacktestCursorTime(undefined);
+              addToast(`Live backtest complete: ${finalTrades.length} trades`, 'success');
+              ws.close();
+              // Construct full result from accumulated trades + summary from server
+              if (data.summary) {
+                setBacktestResult({
+                  summary: data.summary,
+                  trades: finalTrades,
+                  equity_curve: data.equity_curve || [],
+                  request: req as any,
+                });
+              } else {
+                setBacktestResult(null);
+              }
+            }
+          } else if (data.type === 'paused') {
+            setLiveBacktestPaused(true);
+          } else if (data.type === 'continued') {
+            setLiveBacktestPaused(false);
+          } else if (data.type === 'stopped') {
+            setLiveBacktestRunning(false);
+            setLiveBacktestPaused(false);
+            setBacktestCursorTime(undefined);
+            addToast('Backtest stopped', 'info');
+            ws.close();
+          } else if (data.type === 'error') {
+            addToast(data.error, 'error');
+            setLiveBacktestRunning(false);
+            ws.close();
+          }
+        } catch {}
+      };
+
+      ws.onerror = () => {
+        addToast('WebSocket connection failed', 'error');
+        setLiveBacktestRunning(false);
+      };
+
+      ws.onclose = () => {
+        setLiveBacktestRunning(false);
+        setLiveBacktestPaused(false);
+        setBacktestCursorTime(undefined);
+        backtestWsRef.current = null;
+      };
+    } else {
+      const result = await runBacktest(req);
+      if (result) {
+        setBacktestResult(result);
+        const trades = result.trades || [];
+        backtestTradesRef.current = trades;
+        setBacktestTradesState(trades);
+        setLastBacktestSymbol(req.symbol);
+        setLastBacktestTimeframe(req.timeframe);
+        setShowBacktestOverlay(true);
+        addToast('Backtest completed successfully', 'success');
+      }
     }
-  }, [runBacktest, addToast]);
+  }, [runBacktest, addToast, backtestLiveMode, setView]);
 
   const handleBacktestSave = useCallback(async () => {
     if (!backtestResult) return;
@@ -494,8 +593,10 @@ export function App() {
                     positions={simState.open_positions}
                     onUpdatePosition={updatePosition}
                     indicatorConfigs={currentIndicators}
-                    backtestTrades={backtestTradesRef.current}
+                    backtestTrades={backtestTradesState}
+                  backtestCursorTime={backtestCursorTime}
                     showBacktestOverlay={showBacktestOverlay}
+                    backtestCursorTime={backtestCursorTime}
                   />
                 </div>
                 <div className="h-[180px] shrink-0 border-t border-zinc-800">
@@ -532,8 +633,17 @@ export function App() {
       {view === 'backtest' && (
         <div className="h-[calc(100vh-56px)] flex flex-col overflow-hidden">
           <div className="flex-1 min-h-0 overflow-y-auto p-4">
-            {backtestResult ? (
-              <BacktestResults result={backtestResult} onSave={handleBacktestSave} onShowOnChart={() => { setView('trade'); setShowBacktestOverlay(true); }} />
+            {liveBacktestRunning || (backtestTradesState.length > 0 && !backtestResult) ? (
+              <div className="h-full">
+                <BacktestChart
+                  symbol={lastBacktestSymbol || activeSymbol.replace('/', '')}
+                  timeframe={lastBacktestTimeframe || (timeframe >= 60 ? `${Math.floor(timeframe / 60)}h` : `${timeframe}m`)}
+                  backtestTrades={backtestTradesState}
+                  backtestCursorTime={backtestCursorTime}
+                />
+              </div>
+            ) : backtestResult ? (
+              <BacktestResults result={backtestResult} onSave={handleBacktestSave} />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center p-8">
                 <FlaskConical size={64} className="text-zinc-600 mb-4" />
@@ -556,9 +666,50 @@ export function App() {
             <BacktestConfig
               strategyCode={currentStrategyCode}
               onRun={handleBacktestRun}
-              running={backtestRunning}
+              running={backtestRunning || liveBacktestRunning}
               onLoadStrategy={handleLoadStrategy}
+              liveMode={backtestLiveMode}
+              onLiveModeChange={setBacktestLiveMode}
+              speed={backtestSpeed}
+              onSpeedChange={(s) => {
+                setBacktestSpeed(s);
+                if (backtestWsRef.current) {
+                  backtestWsRef.current.send(JSON.stringify({ type: 'speed', speed: s }));
+                }
+              }}
+              liveRunning={liveBacktestRunning}
+              livePaused={liveBacktestPaused}
+              onPause={() => backtestWsRef.current?.send(JSON.stringify({ type: 'pause' }))}
+              onContinue={() => backtestWsRef.current?.send(JSON.stringify({ type: 'continue' }))}
+              onStop={() => backtestWsRef.current?.send(JSON.stringify({ type: 'stop' }))}
             />
+            {liveBacktestRunning && (
+              <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {liveBacktestPaused ? (
+                      <Pause size={12} className="text-amber-400" />
+                    ) : (
+                      <Loader2 size={12} className="animate-spin text-blue-400" />
+                    )}
+                    <span className="text-[10px] font-bold text-zinc-400">
+                      {liveBacktestPaused ? 'Paused' : 'Streaming Backtest'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-500">
+                    {(liveBacktestProgress * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-200 rounded-full ${
+                      liveBacktestPaused ? 'bg-amber-500' : 'bg-blue-500'
+                    }`}
+                    style={{ width: `${liveBacktestProgress * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
             <button
               onClick={() => setOptimizeOpen(!optimizeOpen)}
               className={`w-full flex items-center justify-between px-4 py-2 rounded-lg text-xs font-bold transition-all border ${
@@ -689,7 +840,7 @@ export function App() {
       )}
 
       {/* Backtest Overlay Toggle */}
-      {backtestResult && view === 'trade' && (
+      {(backtestResult || backtestTradesState.length > 0) && view === 'trade' && (
         <button
           onClick={() => setShowBacktestOverlay(!showBacktestOverlay)}
           className={`fixed bottom-[200px] right-[320px] z-10 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
@@ -706,6 +857,55 @@ export function App() {
   );
 }
 
+function BacktestChart({ symbol, timeframe, backtestTrades, backtestCursorTime }: { symbol: string; timeframe: string; backtestTrades: BacktestTrade[]; backtestCursorTime?: number }) {
+  const [candles, setCandles] = useState<Candle[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    fetch(`http://127.0.0.1:3000/api/history?symbol=${symbol}&interval=${timeframe}&limit=500`)
+      .then(r => r.json())
+      .then(data => {
+        if (!mounted) return;
+        if (Array.isArray(data)) {
+          setCandles(data.map((c: any) => ({
+            time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
+          })));
+        }
+        setLoading(false);
+      })
+      .catch(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
+  }, [symbol, timeframe]);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-[#09090b] rounded-lg border border-zinc-800 min-h-[300px]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm text-zinc-500">Loading {symbol} chart...</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-[#09090b] rounded-lg border border-zinc-800 overflow-hidden">
+      <Chart
+        candles={candles}
+        positions={[]}
+        onUpdatePosition={() => {}}
+        chartType="candle"
+        indicatorConfigs={[]}
+        backtestTrades={backtestTrades}
+        showBacktestOverlay={true}
+        backtestCursorTime={backtestCursorTime}
+      />
+    </div>
+  );
+}
+
 function TabChart({
   symbol,
   timeframe,
@@ -715,6 +915,7 @@ function TabChart({
   indicatorConfigs,
   backtestTrades,
   showBacktestOverlay,
+  backtestCursorTime,
 }: {
   symbol: string;
   timeframe: number;
@@ -724,6 +925,7 @@ function TabChart({
   indicatorConfigs: IndicatorConfig[];
   backtestTrades?: BacktestTrade[];
   showBacktestOverlay?: boolean;
+  backtestCursorTime?: number;
 }) {
   const { candles, isInitializing } = useMarketDataForSymbol(symbol, timeframe);
 
@@ -747,6 +949,7 @@ function TabChart({
       indicatorConfigs={indicatorConfigs}
       backtestTrades={backtestTrades}
       showBacktestOverlay={showBacktestOverlay}
+      backtestCursorTime={backtestCursorTime}
     />
   );
 }

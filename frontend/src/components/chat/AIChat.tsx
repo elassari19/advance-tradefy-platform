@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useAIChatStore, AVAILABLE_MODELS } from '../../stores/aiChatStore';
 import { useAIChat } from '../../hooks/useAIChat';
 import { Send, Square, ChevronDown, Copy, Plus, Trash2, History, Bot, Edit3, Check, X } from 'lucide-react';
@@ -34,6 +34,7 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
 
   const { sendMessage, stopGeneration: stop, getModelName } = useAIChat();
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -53,16 +54,39 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
     }
   }, [sessions.length, newSession]);
 
+  const autoResize = useCallback(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+    }
+  }, []);
+
+  useEffect(() => {
+    autoResize();
+  }, [input, autoResize]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && !isStreaming) {
-      // Ensure a session exists
       if (!currentSessionId && sessions.length === 0) {
         newSession();
       }
       sendMessage(input.trim(), symbol, timeframe, selectedModel);
       setInput('');
     }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+  const handleEditMessage = (content: string) => {
+    setInput(content);
+    textareaRef.current?.focus();
   };
 
   const handleNewChat = () => {
@@ -253,8 +277,28 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
           {/* Message List */}
           {currentMessages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] rounded-lg p-4 ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-200'}`}>
-                <div className="text-xs font-medium mb-1 opacity-70">{msg.role === 'user' ? 'You' : msg.model || 'Assistant'}</div>
+              <div className={`group relative max-w-[80%] rounded-lg p-4 ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-200'}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium opacity-70">{msg.role === 'user' ? 'You' : msg.model || 'Assistant'}</span>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => navigator.clipboard.writeText(msg.content)}
+                      className="p-1 rounded text-zinc-400 hover:text-white hover:bg-black/20 transition-colors"
+                      title="Copy message"
+                    >
+                      <Copy size={12} />
+                    </button>
+                    {msg.role === 'user' && (
+                      <button
+                        onClick={() => handleEditMessage(msg.content)}
+                        className="p-1 rounded text-zinc-400 hover:text-white hover:bg-black/20 transition-colors"
+                        title="Edit and re-send"
+                      >
+                        <Edit3 size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <div className="text-sm whitespace-pre-wrap font-mono leading-relaxed">{msg.content}</div>
                 {msg.hasCode && msg.extractedCode && (
                   <div className="mt-3 pt-3 border-t border-zinc-700/50">
@@ -279,8 +323,19 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
           {/* Streaming Response */}
           {isStreaming && currentContent && (
             <div className="flex justify-start">
-              <div className="bg-zinc-800 text-zinc-200 rounded-lg p-4 max-w-[80%]">
-                <div className="text-xs font-medium mb-1 text-zinc-500">Assistant (generating...)</div>
+              <div className="group relative bg-zinc-800 text-zinc-200 rounded-lg p-4 max-w-[80%]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-zinc-500">Assistant (generating...)</span>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => navigator.clipboard.writeText(currentContent)}
+                      className="p-1 rounded text-zinc-400 hover:text-white hover:bg-black/20 transition-colors"
+                      title="Copy message"
+                    >
+                      <Copy size={12} />
+                    </button>
+                  </div>
+                </div>
                 <div className="text-sm whitespace-pre-wrap font-mono leading-relaxed">
                   {currentContent}<span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-1" />
                 </div>
@@ -293,21 +348,23 @@ export function AIChat({ symbol, timeframe, onApplyCode }: AIChatProps) {
 
         {/* Input Area */}
         <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-800">
-          <div className="flex gap-2">
-            <input
-              type="text"
+          <div className="flex gap-2 items-end">
+            <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Ask me anything about trading, analysis, or strategy..."
-              className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-zinc-500"
+              rows={1}
+              className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-zinc-500 resize-none min-h-[48px] max-h-[200px]"
               disabled={isStreaming}
             />
             {isStreaming ? (
-              <button type="button" onClick={stop} className="p-3 bg-red-600 hover:bg-red-700 rounded-lg transition-colors">
+              <button type="button" onClick={stop} className="p-3 bg-red-600 hover:bg-red-700 rounded-lg transition-colors shrink-0">
                 <Square size={18} className="text-white" />
               </button>
             ) : (
-              <button type="submit" disabled={!input.trim()} className="p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:cursor-not-allowed rounded-lg transition-colors">
+              <button type="submit" disabled={!input.trim()} className="p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:cursor-not-allowed rounded-lg transition-colors shrink-0">
                 <Send size={18} className="text-white" />
               </button>
             )}

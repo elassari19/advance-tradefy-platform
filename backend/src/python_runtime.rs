@@ -399,6 +399,8 @@ if tradefy_signal:
             globals.set_item("_low_data", PyList::new(py, &low_data)).map_err(|e| e.to_string())?;
             globals.set_item("_close_data", PyList::new(py, &close_data)).map_err(|e| e.to_string())?;
             globals.set_item("_volume_data", PyList::new(py, &volume_data)).map_err(|e| e.to_string())?;
+            let candles_list = PyList::new(py, &close_data);
+            globals.set_item("candles", candles_list).map_err(|e| e.to_string())?;
             globals.set_item("_ta_symbol", &candle.symbol).map_err(|e| e.to_string())?;
 
             let code_with_globals = format!(
@@ -444,7 +446,7 @@ try:
     if _strategy_config.fn is not None:
         _strategy_config.fn()
     else:
-        on_tick(close_val, open_val, high_val, low_val, close_val, volume_val)
+        on_tick(price, candles)
 except Exception as e:
     print(f"Error in strategy: {{e}}")
 

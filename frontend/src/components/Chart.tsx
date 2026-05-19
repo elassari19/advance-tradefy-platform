@@ -24,11 +24,12 @@ interface ChartProps {
   indicatorConfigs: IndicatorConfig[];
   backtestTrades?: BacktestTrade[];
   showBacktestOverlay?: boolean;
+  backtestCursorTime?: number;
 }
 
 const SUB_CHART_HEIGHT = 130;
 
-export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePosition, chartType, indicatorConfigs, backtestTrades, showBacktestOverlay }) => {
+export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePosition, chartType, indicatorConfigs, backtestTrades, showBacktestOverlay, backtestCursorTime }) => {
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const mainChartRef = useRef<IChartApi | null>(null);
   const areaSeriesRef = useRef<ISeriesApi<'Area'> | null>(null);
@@ -42,6 +43,7 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
   const prevMainLineIdsRef = useRef<string[]>([]);
   const isSyncingRef = useRef(false);
   const tradeMarkerPriceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
+  const cursorRef = useRef<HTMLDivElement>(null);
 
   const subContainerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const subChartRefs = useRef<Map<string, IChartApi>>(new Map());
@@ -531,9 +533,32 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
     };
   }, [backtestTrades, showBacktestOverlay, chartType]);
 
+  // ─── Backtest cursor ───
+  useEffect(() => {
+    if (!mainChartRef.current) return;
+    const chart = mainChartRef.current;
+    if (backtestCursorTime != null) {
+      const visibleRange = chart.timeScale().getVisibleRange();
+      if (visibleRange) {
+        const range = visibleRange.to - visibleRange.from;
+        chart.timeScale().setVisibleRange({
+          from: (backtestCursorTime as number) - range * 0.6,
+          to: (backtestCursorTime as number) + range * 0.4,
+        });
+      }
+      const x = chart.timeScale().timeToCoordinate(backtestCursorTime as number);
+      if (x != null && cursorRef.current) {
+        cursorRef.current.style.left = x + 'px';
+      }
+    }
+  }, [backtestCursorTime]);
+
   return (
     <div className="w-full h-full relative cursor-crosshair flex flex-col">
       <div ref={mainContainerRef} className="flex-1 min-h-0" />
+      {backtestCursorTime != null && (
+        <div ref={cursorRef} className="absolute top-0 bottom-0 w-[2px] bg-blue-500/60 pointer-events-none z-10" style={{ left: 0 }} />
+      )}
       {subChartKeys.map((key, idx) => (
         <React.Fragment key={key}>
           <div className={idx === 0 ? 'h-px bg-zinc-800 shrink-0' : ''} />

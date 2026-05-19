@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createChart } from 'lightweight-charts';
+import { createChart, LineSeries } from 'lightweight-charts';
 import type { IChartApi } from 'lightweight-charts';
 import { Save, Download, TrendingUp, TrendingDown, AlertTriangle, DollarSign } from 'lucide-react';
 import type { BacktestResult, BacktestTrade } from '../../hooks/useBacktest';
@@ -47,16 +47,20 @@ export const BacktestResults: React.FC<BacktestResultsProps> = ({ result, onSave
       crosshair: { vertLine: { visible: false }, horzLine: { visible: false } },
     });
 
-    const series = chart.addLineSeries({
+    const series = chart.addSeries(LineSeries, {
       color: '#3b82f6',
       lineWidth: 2,
       priceFormat: { type: 'price', minMove: 0.01 } as any,
     });
 
-    const data = equity_curve.map((p, i) => ({
-      time: Math.floor(p.time / 86400) as any,
-      value: p.equity,
-    }));
+    const data: { time: number; value: number }[] = [];
+    const seen = new Set<number>();
+    for (const p of equity_curve) {
+      if (!seen.has(p.time)) {
+        seen.add(p.time);
+        data.push({ time: p.time as any, value: p.equity });
+      }
+    }
 
     series.setData(data);
     chart.timeScale().fitContent();

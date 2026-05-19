@@ -27,7 +27,7 @@ use backtest::BacktestEngine;
 use candle_aggregator::CandleAggregator;
 use exchange::{BinanceStream, ExchangeStream};
 use futures_util::{SinkExt, StreamExt};
-use models::{AIChatRequest, AlertRule, BacktestRequest, BinanceTicker, Candle, HistoryParams, OptimizeRequest, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle, TriggeredAlert};
+use models::{AIChatRequest, AlertRule, BacktestProgress, BacktestRequest, BinanceTicker, Candle, HistoryParams, OptimizeRequest, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle, TriggeredAlert};
 use simulator::SimulatorEngine;
 use state_persistence::StateManager;
 use strategy::StrategyEngine;
@@ -861,6 +861,7 @@ async fn run_backtest_optimize(
         initial_balance: payload.initial_balance,
         commission: payload.commission,
         slippage: payload.slippage,
+        speed: 1,
     });
 
     match engine.run().await {
