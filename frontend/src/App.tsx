@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, ChevronDown, BarChart3, FlaskConical, AlertTriangle, Loader2, Radio, Pause, Settings, ScrollText, BarChartHorizontal, FileText, ListTodo } from "lucide-react";
+import { X, Plus, ChevronDown, BarChart3, FlaskConical, AlertTriangle, Loader2, Radio, Pause, Settings, ScrollText, BarChartHorizontal, FileText, ListTodo, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useMarketDataForSymbol } from "./hooks/useMarketData";
 import { useSimulator } from "./hooks/useSimulator";
 import { useBacktest } from "./hooks/useBacktest";
@@ -121,6 +121,7 @@ export function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [toasts, setToasts] = useState<Array<{id: string; message: string; type: 'error' | 'success' | 'info'}>>([]);
   const [showBacktestOverlay, setShowBacktestOverlay] = useState(false);
+  const [orderPanelOpen, setOrderPanelOpen] = useState(true);
   const backtestTradesRef = useRef<BacktestTrade[]>([]);
   const [backtestTradesState, setBacktestTradesState] = useState<BacktestTrade[]>([]);
   const [backtestLiveMode, setBacktestLiveMode] = useState(false);
@@ -620,8 +621,8 @@ export function App() {
       />
 
       {view === 'trade' && (
-        <div className="grid h-[calc(100vh-56px)] grid-cols-[1fr_300px]">
-          <main className="flex flex-col overflow-hidden bg-[#09090b]">
+        <div className="h-[calc(100vh-56px)] flex">
+          <main className="flex-1 flex flex-col overflow-hidden bg-[#09090b]">
             <div className="flex items-center justify-between border-b border-zinc-800 bg-[#09090b] overflow-x-auto scrollbar-none shrink-0">
               <div className="flex items-center">
                 {tabs.map((symbol) => {
@@ -661,6 +662,12 @@ export function App() {
 
               <div className="flex items-center gap-2 px-3 shrink-0">
                 <button
+                  onClick={() => setOrderPanelOpen(!orderPanelOpen)}
+                  className="flex items-center gap-1.5 px-2 py-1.5 bg-zinc-800/50 hover:bg-zinc-700 rounded text-xs font-mono text-zinc-300 transition-colors border border-zinc-700"
+                >
+                  {orderPanelOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+                </button>
+                <button
                   onClick={() => setShowIndicatorsModal(true)}
                   className={`flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-mono transition-colors border ${
                     currentIndicators.length > 0
@@ -699,8 +706,8 @@ export function App() {
               </div>
             </div>
 
-            <div className="flex-1 min-h-0">
-              <div className="h-full flex flex-col">
+            <div className="flex-1 min-h-0 flex flex-col">
+              <div className="flex-1 min-h-0 flex">
                 <div className="flex-1 min-h-0">
                   <TabChart
                     key={activeSymbol}
@@ -716,34 +723,40 @@ export function App() {
                     backtestCursorTime={backtestCursorTime}
                   />
                 </div>
-                <div className="h-[180px] shrink-0 border-t border-zinc-800">
-                  <TerminalTabs
-                    positions={simState.open_positions}
-                    history={simState.history}
-                    activeSymbol={activeSymbol}
-                    strategyCode={currentStrategyCode}
-                    strategyActive={currentStrategyActive}
-                    onClosePosition={closePosition}
-                    onUpdatePosition={updatePosition}
-                    onDeployStrategy={handleDeployStrategy}
-                    onRemoveStrategy={handleRemoveStrategy}
-                    onStrategyCodeChange={handleStrategyCodeChange}
-                    onSaveStrategy={handleSaveStrategy}
-                    onLoadStrategy={handleLoadStrategy}
-                    focusTab={focusTab}
-                    onRunBacktest={() => setView('backtest')}
-                    backtestRunning={backtestRunning}
+
+                <motion.div
+                  animate={{ width: orderPanelOpen ? 300 : 0, opacity: orderPanelOpen ? 1 : 0 }}
+                  transition={{ duration: 0.15, ease: 'easeInOut' }}
+                  className="overflow-hidden shrink-0"
+                >
+                  <OrderPanel
+                    balance={simState.balance}
+                    onPlaceOrder={placeOrder}
+                    symbol={activeSymbol.replace('/', '')}
                   />
-                </div>
+                </motion.div>
+              </div>
+              <div className="h-[180px] shrink-0 border-t border-zinc-800">
+                <TerminalTabs
+                  positions={simState.open_positions}
+                  history={simState.history}
+                  activeSymbol={activeSymbol}
+                  strategyCode={currentStrategyCode}
+                  strategyActive={currentStrategyActive}
+                  onClosePosition={closePosition}
+                  onUpdatePosition={updatePosition}
+                  onDeployStrategy={handleDeployStrategy}
+                  onRemoveStrategy={handleRemoveStrategy}
+                  onStrategyCodeChange={handleStrategyCodeChange}
+                  onSaveStrategy={handleSaveStrategy}
+                  onLoadStrategy={handleLoadStrategy}
+                  focusTab={focusTab}
+                  onRunBacktest={() => setView('backtest')}
+                  backtestRunning={backtestRunning}
+                />
               </div>
             </div>
           </main>
-
-          <OrderPanel
-            balance={simState.balance}
-            onPlaceOrder={placeOrder}
-            symbol={activeSymbol.replace('/', '')}
-          />
         </div>
       )}
 
@@ -994,7 +1007,9 @@ export function App() {
       {(backtestResult || backtestTradesState.length > 0) && view === 'trade' && (
         <button
           onClick={() => setShowBacktestOverlay(!showBacktestOverlay)}
-          className={`fixed bottom-[200px] right-[320px] z-10 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+          className={`fixed bottom-[200px] z-10 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+            orderPanelOpen ? 'right-[320px]' : 'right-4'
+          } ${
             showBacktestOverlay
               ? 'bg-blue-600/20 border-blue-500/40 text-blue-400'
               : 'bg-zinc-800/80 border-zinc-700 text-zinc-400 hover:text-zinc-200'

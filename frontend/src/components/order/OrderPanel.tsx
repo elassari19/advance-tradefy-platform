@@ -35,7 +35,7 @@ export const OrderPanel: React.FC<OrderPanelProps> = ({ balance, onPlaceOrder, s
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => setOrderType('LIMIT')}
-            className={`py-3 rounded-lg font-bold text-sm transition-all active:scale-95 border ${orderType === 'LIMIT'
+            className={`py-2 rounded-lg font-bold text-xs transition-all active:scale-95 border ${orderType === 'LIMIT'
                 ? 'bg-zinc-800 border-zinc-700 text-white'
                 : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:bg-zinc-800'
               }`}
@@ -44,7 +44,7 @@ export const OrderPanel: React.FC<OrderPanelProps> = ({ balance, onPlaceOrder, s
           </button>
           <button
             onClick={() => setOrderType('MARKET')}
-            className={`py-3 rounded-lg font-bold text-sm transition-all active:scale-95 ${orderType === 'MARKET'
+            className={`py-2 rounded-lg font-bold text-xs transition-all active:scale-95 ${orderType === 'MARKET'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
                 : 'bg-zinc-900 border border-zinc-800 text-zinc-500 hover:bg-zinc-800'
               }`}
@@ -92,13 +92,13 @@ export const OrderPanel: React.FC<OrderPanelProps> = ({ balance, onPlaceOrder, s
         <div className="pt-4 grid grid-cols-2 gap-4">
           <button
             onClick={() => handleOrder('Buy')}
-            className="py-4 bg-green-600/10 border border-green-600/30 text-green-500 rounded-xl font-black text-lg hover:bg-green-600 hover:text-white transition-all active:scale-95"
+            className="py-3 bg-green-600/10 border border-green-600/30 text-green-500 rounded-xl font-bold text-sm hover:bg-green-600 hover:text-white transition-all active:scale-95"
           >
             BUY
           </button>
           <button
             onClick={() => handleOrder('Sell')}
-            className="py-4 bg-red-600/10 border border-red-600/30 text-red-500 rounded-xl font-black text-lg hover:bg-red-600 hover:text-white transition-all active:scale-95"
+            className="py-3 bg-red-600/10 border border-red-600/30 text-red-500 rounded-xl font-bold text-sm hover:bg-red-600 hover:text-white transition-all active:scale-95"
           >
             SELL
           </button>
