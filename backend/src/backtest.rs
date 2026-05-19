@@ -97,7 +97,7 @@ impl BacktestEngine {
                 let candles = engine.fetch_historical_candles().await?;
                 Ok(PreparedData::Candles(candles))
             }
-            TestingMode::OpenPricesOnly => {
+            TestingMode::OpenPricesOnly | TestingMode::ClosePricesOnly => {
                 let candles = self.fetch_historical_candles().await?;
                 Ok(PreparedData::Candles(candles))
             }
@@ -344,6 +344,8 @@ impl BacktestEngine {
             // ControlPoints: simulate O→H→L→C path
             let execution_price = if self.request.testing_mode == TestingMode::OpenPricesOnly {
                 candle.open
+            } else if self.request.testing_mode == TestingMode::ClosePricesOnly {
+                candle.close
             } else {
                 candle.close
             };
@@ -425,7 +427,7 @@ impl BacktestEngine {
                         }
                     }
                 }
-            } else if self.request.testing_mode != TestingMode::OpenPricesOnly {
+            } else if self.request.testing_mode != TestingMode::OpenPricesOnly && self.request.testing_mode != TestingMode::ClosePricesOnly {
                 // Normal candle processing with TP/SL checking
                 let candle_events = engine.process_candle(candle);
                 all_events.extend(candle_events);
@@ -736,6 +738,7 @@ fn compute_modeling_quality(request: &BacktestRequest) -> f64 {
         TestingMode::EveryTick => 90.0,
         TestingMode::ControlPoints => 75.0,
         TestingMode::OpenPricesOnly => 40.0,
+        TestingMode::ClosePricesOnly => 40.0,
     }
 }
 

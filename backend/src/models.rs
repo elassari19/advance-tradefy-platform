@@ -7,6 +7,7 @@ pub enum TestingMode {
     EveryTick,
     ControlPoints,
     OpenPricesOnly,
+    ClosePricesOnly,
 }
 
 impl Default for TestingMode {

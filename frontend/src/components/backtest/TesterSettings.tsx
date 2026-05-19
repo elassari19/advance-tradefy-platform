@@ -66,7 +66,8 @@ export const TesterSettings: React.FC<TesterSettingsProps> = ({ strategyCode, on
   const testingModeOptions: { value: TestingMode; label: string; desc: string }[] = [
     { value: 'EveryTick', label: 'Every tick', desc: 'Most accurate, slowest' },
     { value: 'ControlPoints', label: '1 minute OHLC', desc: 'Balance speed & accuracy' },
-    { value: 'OpenPricesOnly', label: 'Open prices only', desc: 'Fastest, least accurate' },
+    { value: 'OpenPricesOnly', label: 'Open prices only', desc: 'Fast, uses open price per bar' },
+    { value: 'ClosePricesOnly', label: 'Close prices only', desc: 'Fast, uses close price per bar' },
   ];
 
   return (

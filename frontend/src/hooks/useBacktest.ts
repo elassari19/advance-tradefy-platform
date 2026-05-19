@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 
 const API_BASE = 'http://127.0.0.1:3000';
 
-export type TestingMode = 'EveryTick' | 'ControlPoints' | 'OpenPricesOnly';
+export type TestingMode = 'EveryTick' | 'ControlPoints' | 'OpenPricesOnly' | 'ClosePricesOnly';
 
 export interface BacktestRequest {
   strategy_code: string;

@@ -879,6 +879,7 @@ async fn prepare_backtest_data(
                     TestingMode::EveryTick => 90.0,
                     TestingMode::ControlPoints => 75.0,
                     TestingMode::OpenPricesOnly => 40.0,
+                    TestingMode::ClosePricesOnly => 40.0,
                 }
             } else { 0.0 };
 
