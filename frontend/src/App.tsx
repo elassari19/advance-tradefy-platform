@@ -134,7 +134,7 @@ export function App() {
   const [backtestCursorTime, setBacktestCursorTime] = useState<number | undefined>(undefined);
   const backtestWsRef = useRef<WebSocket | null>(null);
   const backtestContainerRef = useRef<HTMLDivElement>(null);
-  const [backtestSplitRatio, setBacktestSplitRatio] = useState(0.45);
+  const [backtestSplitRatio, setBacktestSplitRatio] = useState(0.67);
   const isDragging = useRef(false);
 
   // ── Alert State ──

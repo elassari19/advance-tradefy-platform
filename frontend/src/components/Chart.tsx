@@ -99,17 +99,18 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
 
     mainChartRef.current = chart;
 
-    const handleResize = () => {
-      if (mainContainerRef.current) {
+    const container = mainContainerRef.current;
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
         chart.applyOptions({
-          width: mainContainerRef.current.clientWidth,
-          height: mainContainerRef.current.clientHeight,
+          width: entry.contentBoxSize?.[0]?.inlineSize ?? container?.clientWidth ?? 0,
+          height: entry.contentBoxSize?.[0]?.blockSize ?? container?.clientHeight ?? 0,
         });
       }
-    };
-    window.addEventListener('resize', handleResize);
+    });
+    resizeObserver.observe(container);
 
-    const container = mainContainerRef.current;
     const onMouseDown = (e: MouseEvent) => {
       if (!activeSeriesRef.current || !mainChartRef.current) return;
       const rect = container.getBoundingClientRect();
@@ -164,7 +165,7 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
     window.addEventListener('mouseup', onMouseUp);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       container.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
@@ -211,19 +212,25 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
       });
 
       subChartRefs.current.set(key, chart);
+
+      const subObserver = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (entry) {
+          chart.applyOptions({
+            width: entry.contentBoxSize?.[0]?.inlineSize ?? el?.clientWidth ?? 0,
+          });
+        }
+      });
+      subObserver.observe(el);
+      // Store observer for cleanup
+      (chart as any).__resizeObserver = subObserver;
     }
 
-    const handleResize = () => {
-      for (const [key, chart] of subChartRefs.current) {
-        const el = subContainerRefs.current.get(key);
-        if (el) chart.applyOptions({ width: el.clientWidth });
-      }
-    };
-    window.addEventListener('resize', handleResize);
-
     return () => {
-      window.removeEventListener('resize', handleResize);
-      for (const [, chart] of subChartRefs.current) { chart.remove(); }
+      for (const [, chart] of subChartRefs.current) {
+        (chart as any).__resizeObserver?.disconnect();
+        chart.remove();
+      }
       subChartRefs.current.clear();
       subIndicatorSeriesRef.current.clear();
       subSeriesOwnerRef.current.clear();

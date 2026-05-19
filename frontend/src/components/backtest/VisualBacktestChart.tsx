@@ -107,18 +107,19 @@ export const VisualBacktestChart: React.FC<VisualBacktestChartProps> = ({
     candleSeriesRef.current = series;
     markersPluginRef.current = createSeriesMarkers(series);
 
-    const handleResize = () => {
-      if (containerRef.current) {
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
         chart.applyOptions({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
+          width: entry.contentBoxSize?.[0]?.inlineSize ?? containerRef.current?.clientWidth ?? 0,
+          height: entry.contentBoxSize?.[0]?.blockSize ?? containerRef.current?.clientHeight ?? 0,
         });
       }
-    };
-    window.addEventListener('resize', handleResize);
+    });
+    resizeObserver.observe(containerRef.current);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
       markersPluginRef.current?.detach();
       chart.remove();
