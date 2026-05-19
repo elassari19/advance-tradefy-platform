@@ -57,6 +57,7 @@ const BacktestChartPanel = ({
   backtestCursorTime?: number;
 }) => {
   const { candles, isInitializing } = useMarketDataForSymbol(symbol, timeframe);
+  const noop = useCallback(() => {}, []);
 
   if (isInitializing) {
     return (
@@ -73,7 +74,7 @@ const BacktestChartPanel = ({
     <Chart
       candles={candles}
       positions={[]}
-      onUpdatePosition={() => {}}
+      onUpdatePosition={noop}
       chartType={chartType}
       indicatorConfigs={[]}
       backtestTrades={backtestTrades}
