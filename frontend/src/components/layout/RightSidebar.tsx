@@ -1,6 +1,6 @@
-import { Code, Bell } from "lucide-react";
+import { Code, Bell, FileCode } from "lucide-react";
 
-export type RightPanel = 'script' | 'alerts' | null;
+export type RightPanel = 'script' | 'strategy' | 'alerts' | null;
 
 interface RightSidebarProps {
   activePanel: RightPanel;
@@ -11,6 +11,7 @@ interface RightSidebarProps {
 export function RightSidebar({ activePanel, onPanelChange, alertCount }: RightSidebarProps) {
   const navItems = [
     { id: 'script' as const, icon: Code, label: 'Pen Script' },
+    { id: 'strategy' as const, icon: FileCode, label: 'Strategy' },
     { id: 'alerts' as const, icon: Bell, label: 'Alerts', badge: alertCount },
   ];
 

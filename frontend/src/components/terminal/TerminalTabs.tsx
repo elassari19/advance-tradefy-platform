@@ -1,39 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { Position, TradeHistory } from "../../hooks/useSimulator";
-import { X, Edit2, Check, XCircle, Code2, Settings, FlaskConical, FileCode } from 'lucide-react';
-import { CodeEditor } from './CodeEditor';
-import { JsStrategyEditor } from './JsStrategyEditor';
+import { X, Edit2, Check, XCircle } from 'lucide-react';
 
 interface TerminalTabsProps {
   positions: Position[];
   history: TradeHistory[];
-  activeSymbol: string;
-  strategyCode: string;
-  strategyActive: boolean;
   onClosePosition: (id: string) => void;
   onUpdatePosition: (id: string, tp: number | null, sl: number | null) => void;
-  onDeployStrategy: (symbol: string, code: string) => Promise<void>;
-  onRemoveStrategy: (symbol: string) => Promise<void>;
-  onStrategyCodeChange: (code: string) => void;
-  onSaveStrategy?: (name: string, code: string) => Promise<void>;
-  onLoadStrategy?: () => void;
-  focusTab?: 'positions' | 'history' | 'strategy' | 'logs';
-  onRunBacktest?: () => void;
-  backtestRunning?: boolean;
 }
 
 export const TerminalTabs: React.FC<TerminalTabsProps> = ({
-  positions, history, activeSymbol, strategyCode, strategyActive,
-  onClosePosition, onUpdatePosition, onDeployStrategy, onRemoveStrategy, onStrategyCodeChange,
-  onSaveStrategy, onLoadStrategy, focusTab, onRunBacktest, backtestRunning
+  positions, history,
+  onClosePosition, onUpdatePosition,
 }) => {
-  const [activeTab, setActiveTab] = useState<'positions' | 'history' | 'strategy' | 'logs'>('positions');
-  const [strategySubTab, setStrategySubTab] = useState<'editor' | 'backtest' | 'settings'>('editor');
-  const [editorLang, setEditorLang] = useState<'python' | 'javascript'>('python');
-
-  useEffect(() => {
-    if (focusTab) setActiveTab(focusTab);
-  }, [focusTab]);
+  const [activeTab, setActiveTab] = useState<'positions' | 'history' | 'logs'>('positions');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<{ tp: string; sl: string }>({ tp: '', sl: '' });
 
@@ -77,15 +57,6 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
             }`}
         >
           History ({history.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('strategy')}
-          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${activeTab === 'strategy' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'
-            }`}
-        >
-          <Code2 size={14} />
-          Strategy
-          {strategyActive && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
         </button>
         <button
           onClick={() => setActiveTab('logs')}
@@ -223,114 +194,6 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
 
         {activeTab === 'logs' && (
           <div className="p-4 text-zinc-600 italic text-center">System logs will appear here.</div>
-        )}
-
-        {activeTab === 'strategy' && (
-          <div className="flex flex-col h-full">
-            <div className="flex border-b border-zinc-800 bg-zinc-900/30 shrink-0">
-              <button
-                onClick={() => setStrategySubTab('editor')}
-                className={`flex items-center gap-1.5 px-4 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b-2 ${
-                  strategySubTab === 'editor'
-                    ? 'border-primary text-primary bg-primary/5'
-                    : 'border-transparent text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                <Code2 size={12} />
-                Editor
-              </button>
-              <button
-                onClick={() => {
-                  setStrategySubTab('backtest');
-                  if (onRunBacktest) onRunBacktest();
-                }}
-                className={`flex items-center gap-1.5 px-4 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b-2 ${
-                  strategySubTab === 'backtest'
-                    ? 'border-primary text-primary bg-primary/5'
-                    : 'border-transparent text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                <FlaskConical size={12} />
-                Backtest
-                {backtestRunning && <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />}
-              </button>
-              <button
-                onClick={() => setStrategySubTab('settings')}
-                className={`flex items-center gap-1.5 px-4 py-2 text-[10px] font-bold uppercase tracking-wider transition-all border-b-2 ${
-                  strategySubTab === 'settings'
-                    ? 'border-primary text-primary bg-primary/5'
-                    : 'border-transparent text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                <Settings size={12} />
-                Settings
-              </button>
-              <div className="ml-auto flex items-center pr-2">
-                <button
-                  onClick={() => setEditorLang(editorLang === 'python' ? 'javascript' : 'python')}
-                  className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
-                >
-                  <FileCode size={10} />
-                  {editorLang === 'python' ? 'Python' : 'JavaScript'}
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              {strategySubTab === 'editor' && (
-                editorLang === 'python' ? (
-                  <CodeEditor
-                    symbol={activeSymbol}
-                    code={strategyCode}
-                    isActive={strategyActive}
-                    onCodeChange={onStrategyCodeChange}
-                    onDeploy={onDeployStrategy}
-                    onRemove={onRemoveStrategy}
-                    onSave={onSaveStrategy}
-                    onLoad={onLoadStrategy}
-                  />
-                ) : (
-                  <JsStrategyEditor symbol={activeSymbol} />
-                )
-              )}
-              {strategySubTab === 'backtest' && (
-                <div className="flex flex-col items-center justify-center h-full text-center p-4">
-                  <FlaskConical size={24} className="text-zinc-600 mb-2" />
-                  <p className="text-xs text-zinc-500 mb-2">Run a backtest from the Backtest view</p>
-                  <p className="text-[10px] text-zinc-600">Switch to Backtest view (Ctrl+B) for full configuration</p>
-                </div>
-              )}
-              {strategySubTab === 'settings' && (
-                <div className="p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-zinc-400">Strategy Active</span>
-                    <span className={`text-xs font-bold ${strategyActive ? 'text-green-500' : 'text-zinc-500'}`}>
-                      {strategyActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-zinc-400">Symbol</span>
-                    <span className="text-xs font-mono text-zinc-300">{activeSymbol}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-zinc-400">Lines of Code</span>
-                    <span className="text-xs font-mono text-zinc-300">
-                      {strategyCode.split('\n').length}
-                    </span>
-                  </div>
-                  <div className="pt-2 border-t border-zinc-800">
-                    {onSaveStrategy && (
-                      <button
-                        onClick={() => onSaveStrategy(`${activeSymbol.replace('/', '_')}_strategy`, strategyCode)}
-                        className="w-full px-3 py-2 rounded text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
-                      >
-                        Save Strategy
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
         )}
       </div>
     </div>

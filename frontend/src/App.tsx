@@ -7,6 +7,7 @@ import { useBacktest } from "./hooks/useBacktest";
 import { Chart, type Drawing } from "./components/Chart";
 import { OrderPanel } from "./components/order/OrderPanel";
 import { TerminalTabs } from "./components/terminal/TerminalTabs";
+import { StrategyPanel } from "./components/terminal/StrategyPanel";
 import { Header } from "./components/layout/Header";
 import { Sidebar } from "./components/layout/Sidebar";
 import { RightSidebar } from "./components/layout/RightSidebar";
@@ -92,7 +93,7 @@ const BacktestChartPanel = ({
 
 export function App() {
   const [view, setView] = useState<View>('trade');
-  const [rightPanel, setRightPanel] = useState<'script' | 'alerts' | null>(null);
+  const [rightPanel, setRightPanel] = useState<'script' | 'strategy' | 'alerts' | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
@@ -654,8 +655,7 @@ export function App() {
   }, [activeSymbol]);
 
   const handleOpenStrategy = useCallback(() => {
-    setFocusTab('strategy');
-    setTimeout(() => setFocusTab(undefined), 100);
+    setRightPanel('strategy');
   }, []);
 
   const handleSaveCustomIndicator = useCallback((def: CustomIndicatorDef) => {
@@ -920,19 +920,8 @@ export function App() {
                 <TerminalTabs
                   positions={simState.open_positions}
                   history={simState.history}
-                  activeSymbol={activeSymbol}
-                  strategyCode={currentStrategyCode}
-                  strategyActive={currentStrategyActive}
                   onClosePosition={closePosition}
                   onUpdatePosition={updatePosition}
-                  onDeployStrategy={handleDeployStrategy}
-                  onRemoveStrategy={handleRemoveStrategy}
-                  onStrategyCodeChange={handleStrategyCodeChange}
-                  onSaveStrategy={handleSaveStrategy}
-                  onLoadStrategy={handleLoadStrategy}
-                  focusTab={focusTab}
-                  onRunBacktest={() => setView('backtest')}
-                  backtestRunning={backtestRunning}
                 />
               </div>
             </div>
@@ -1178,6 +1167,18 @@ export function App() {
             symbol={activeSymbol.replace('/', '')} 
             timeframe={formatTimeframe(timeframe)}
             onApplyCode={handleApplyCode}
+          />
+        )}
+        {rightPanel === 'strategy' && (
+          <StrategyPanel
+            symbol={activeSymbol}
+            code={currentStrategyCode}
+            isActive={currentStrategyActive}
+            onCodeChange={handleStrategyCodeChange}
+            onDeploy={handleDeployStrategy}
+            onRemove={handleRemoveStrategy}
+            onSave={handleSaveStrategy}
+            onLoad={handleLoadStrategy}
           />
         )}
         {rightPanel === 'alerts' && (
