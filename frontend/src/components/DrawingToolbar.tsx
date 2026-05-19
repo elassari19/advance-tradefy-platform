@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Minus, TrendingUp, Square, MousePointer2, Trash2, GripVertical } from 'lucide-react';
+import { Minus, TrendingUp, Square, MousePointer2, Trash2, GripVertical, Crosshair } from 'lucide-react';
 
-export type DrawingTool = 'pointer' | 'trend-line' | 'horizontal-line' | 'rectangle';
+export type DrawingTool = 'pointer' | 'trend-line' | 'horizontal-line' | 'rectangle' | 'metrics';
 
 const POSITION_KEY = 'drawingToolbarPosition';
 
@@ -72,6 +72,7 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
     { tool: 'trend-line', icon: <TrendingUp size={14} />, label: 'Trend Line' },
     { tool: 'horizontal-line', icon: <Minus size={14} />, label: 'Horizontal Line' },
     { tool: 'rectangle', icon: <Square size={14} />, label: 'Rectangle' },
+    { tool: 'metrics', icon: <Crosshair size={14} />, label: 'Measure' },
   ];
 
   return (

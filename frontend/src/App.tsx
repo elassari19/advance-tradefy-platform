@@ -179,6 +179,29 @@ export function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // ── Persist chart state ──
+  const CHART_STATE_KEY = 'tradefy-chart-state';
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(CHART_STATE_KEY);
+      if (saved) {
+        const state = JSON.parse(saved);
+        if (state.timeframe != null) setTimeframe(state.timeframe);
+        if (state.chartType) setChartType(state.chartType);
+        if (state.drawings) setDrawings(state.drawings);
+        if (state.strategyCodes) setStrategyCodes(state.strategyCodes as Record<string, string>);
+        if (state.activeStrategySymbols) setActiveStrategySymbols(state.activeStrategySymbols);
+        if (state.indicatorConfigs) setIndicatorConfigs(state.indicatorConfigs as Record<string, IndicatorConfig[]>);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const state = { timeframe, chartType, drawings, strategyCodes, activeStrategySymbols, indicatorConfigs };
+    localStorage.setItem(CHART_STATE_KEY, JSON.stringify(state));
+  }, [timeframe, chartType, drawings, strategyCodes, activeStrategySymbols, indicatorConfigs]);
+
   useEffect(() => {
     fetchWebhooks().then(setWebhooks).catch(console.error);
     fetchActiveStrategies().then(setActiveStrategySymbols).catch(console.error);
@@ -727,7 +750,6 @@ export function App() {
                     onUpdatePosition={updatePosition}
                     indicatorConfigs={currentIndicators}
                     backtestTrades={backtestTradesState}
-                  backtestCursorTime={backtestCursorTime}
                     showBacktestOverlay={showBacktestOverlay}
                     backtestCursorTime={backtestCursorTime}
                     drawingTool={drawingTool}
