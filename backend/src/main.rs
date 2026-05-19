@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 mod ai;
 mod alerts;
 mod backtest;
@@ -27,13 +29,14 @@ use backtest::BacktestEngine;
 use candle_aggregator::CandleAggregator;
 use exchange::{BinanceStream, ExchangeStream};
 use futures_util::{SinkExt, StreamExt};
-use models::{AIChatRequest, AlertRule, BacktestProgress, BacktestRequest, BinanceTicker, Candle, HistoryParams, OptimizeRequest, OrderRequest, SimulatorState, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle, TriggeredAlert};
+use models::{AIChatRequest, AlertRule, BacktestProgress, BacktestRequest, BinanceTicker, Candle, HistoryParams, OptimizeRequest, OrderRequest, PrepareDataRequest, PreparedData, SimulatorState, TestingMode, Tick, UpdatePositionRequest, WebhookConfig, HistoricalCandle, TriggeredAlert};
 use simulator::SimulatorEngine;
 use state_persistence::StateManager;
 use strategy::StrategyEngine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc};
 use tower_http::cors::{Any, CorsLayer};
@@ -116,6 +119,7 @@ async fn main() {
                 "migrations/007_create_candle_cache.sql",
                 "migrations/008_create_saved_state.sql",
                 "migrations/009_create_execution_stats.sql",
+                "migrations/010_add_enhanced_backtest_fields.sql",
             ] {
                 let sql = match tokio::fs::read_to_string(migration).await {
                     Ok(content) => content,
@@ -236,6 +240,8 @@ async fn main() {
         .route("/api/indicators/custom/save", post(save_custom_indicator))
         .route("/api/indicators/custom/list", get(list_custom_indicators))
         .route("/api/indicators/custom/:id", delete(delete_custom_indicator))
+        .route("/api/backtest/prepare-data", post(prepare_backtest_data))
+        .route("/ws/backtest", get(ws_backtest_handler))
         .route("/api/backtest/run", post(run_backtest))
         .route("/api/backtest/optimize", post(run_backtest_optimize))
         .route("/api/backtest/save", post(save_backtest))
@@ -294,7 +300,7 @@ async fn start_binance_stream(state: Arc<AppState>) {
                                     *last = Some(tick.clone());
                                 }
 
-                                state.simulator.process_tick(&tick);
+                                let _tick_events = state.simulator.process_tick(&tick);
 
                                 let completed_candles = {
                                     let mut aggregators = state.aggregators.lock().unwrap();
@@ -447,7 +453,7 @@ async fn place_order(
     if let Some(tick) = tick {
         let res = state.simulator.place_order(payload.clone(), tick.price, tick.time);
 
-        if let Ok(id) = res {
+        if let Ok((id, _event)) = res {
             let webhook_configs = {
                 let c = state.webhook_configs.lock().unwrap();
                 c.clone()
@@ -489,8 +495,12 @@ async fn update_position(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<UpdatePositionRequest>,
 ) -> impl IntoResponse {
-    match state.simulator.update_position(&payload.id, payload.take_profit, payload.stop_loss) {
-        Ok(_) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "success" }))),
+    let timestamp = {
+        let last = state.last_tick.lock().unwrap();
+        last.as_ref().map(|t| t.time).unwrap_or(0)
+    };
+    match state.simulator.update_position(&payload.id, payload.take_profit, payload.stop_loss, timestamp) {
+        Ok(_event) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "success" }))),
         Err(e) => (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e }))),
     }
 }
@@ -506,7 +516,7 @@ async fn close_position(
     };
 
     match state.simulator.close_position(id, timestamp) {
-        Ok(_) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "success" }))),
+        Ok(_event) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "success" }))),
         Err(e) => (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e }))),
     }
 }
@@ -816,6 +826,144 @@ async fn delete_custom_indicator(
     }
 }
 
+async fn prepare_backtest_data(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<PrepareDataRequest>,
+) -> impl IntoResponse {
+    // Use cached data if available
+    if let Some(_pool) = &state.db {
+        let cached = state.state_manager.load_candle_cache(
+            &payload.symbol, &payload.timeframe, payload.start_time, payload.end_time
+        ).await;
+        if let Some(candles) = cached {
+            if !candles.is_empty() {
+                let total_range = payload.end_time.saturating_sub(payload.start_time);
+                let modeling_quality = if total_range > 0 { 90.0 } else { 0.0 };
+                let resp = serde_json::json!({
+                    "status": "cached",
+                    "total_candles": candles.len(),
+                    "total_ticks": 0,
+                    "start_time": payload.start_time,
+                    "end_time": payload.end_time,
+                    "modeling_quality": modeling_quality,
+                });
+                return (axum::http::StatusCode::OK, Json(resp));
+            }
+        }
+    }
+
+    let request = BacktestRequest {
+        strategy_code: String::new(),
+        symbol: payload.symbol.clone(),
+        timeframe: payload.timeframe.clone(),
+        start_time: payload.start_time,
+        end_time: payload.end_time,
+        initial_balance: 0.0,
+        commission: 0.0,
+        slippage: 0.0,
+        speed: 1,
+        testing_mode: payload.testing_mode.clone(),
+        visual: false,
+    };
+    let engine = BacktestEngine::new(request);
+
+    match engine.prepare_data().await {
+        Ok(data) => {
+            let (total_candles, total_ticks) = match &data {
+                PreparedData::Candles(c) => (c.len() as u32, 0u64),
+                PreparedData::Ticks(t) => (0u32, t.len() as u64),
+            };
+            let total_range = payload.end_time.saturating_sub(payload.start_time);
+            let modeling_quality = if total_range > 0 {
+                match payload.testing_mode {
+                    TestingMode::EveryTick => 90.0,
+                    TestingMode::ControlPoints => 75.0,
+                    TestingMode::OpenPricesOnly => 40.0,
+                }
+            } else { 0.0 };
+
+            (axum::http::StatusCode::OK, Json(serde_json::json!({
+                "status": "ready",
+                "total_candles": total_candles,
+                "total_ticks": total_ticks,
+                "start_time": payload.start_time,
+                "end_time": payload.end_time,
+                "modeling_quality": modeling_quality,
+            })))
+        }
+        Err(e) => {
+            tracing::error!("Prepare data error: {}", e);
+            (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e })))
+        }
+    }
+}
+
+async fn ws_backtest_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_backtest_ws(socket, state))
+}
+
+async fn handle_backtest_ws(mut socket: WebSocket, _state: Arc<AppState>) {
+    tracing::info!("New backtest WebSocket connection");
+
+    while let Some(msg) = socket.recv().await {
+        let msg = match msg {
+            Ok(Message::Text(text)) => text,
+            Ok(Message::Close(_)) => break,
+            _ => continue,
+        };
+
+        let request: BacktestRequest = match serde_json::from_str(&msg) {
+            Ok(req) => req,
+            Err(e) => {
+                let _ = socket.send(Message::Text(
+                    serde_json::json!({"error": format!("Invalid request: {}", e)}).to_string()
+                )).await;
+                continue;
+            }
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<BacktestProgress>();
+        let speed = Arc::new(AtomicU32::new(request.speed.max(1)));
+        let paused = Arc::new(AtomicBool::new(false));
+        let cancelled = Arc::new(AtomicBool::new(false));
+
+        let req_clone = request.clone();
+        tokio::spawn(async move {
+            let engine = BacktestEngine::new(req_clone);
+            match engine.fetch_historical_candles().await {
+                Ok(candles) => {
+                    let _ = engine.execute_with_candles_streaming(
+                        candles, tx, speed, paused, cancelled
+                    );
+                }
+                Err(_e) => {
+                    let _ = tx.send(BacktestProgress {
+                        progress: 1.0, trades: vec![], equity_curve: vec![],
+                        events: vec![], current_candle: None,
+                        done: true,
+                        summary: None,
+                    });
+                }
+            }
+        });
+
+        while let Some(progress) = rx.recv().await {
+            let msg = serde_json::to_string(&progress).unwrap();
+            if socket.send(Message::Text(msg)).await.is_err() {
+                break;
+            }
+            if progress.done {
+                break;
+            }
+        }
+    }
+
+    tracing::info!("Backtest WebSocket connection closed");
+}
+
 async fn run_backtest(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<BacktestRequest>,
@@ -827,7 +975,6 @@ async fn run_backtest(
         ).await;
         if let Some(candles) = cached {
             if !candles.is_empty() {
-                // Use cache-only path
                 let engine = BacktestEngine::new(payload);
                 let result = engine.run_with_candles(candles).await;
                 return match result {
@@ -862,6 +1009,8 @@ async fn run_backtest_optimize(
         commission: payload.commission,
         slippage: payload.slippage,
         speed: 1,
+        testing_mode: TestingMode::ControlPoints,
+        visual: false,
     });
 
     match engine.run().await {
@@ -913,6 +1062,27 @@ async fn save_backtest(
             .unwrap_or_default()
     };
 
+    let testing_mode = request["testing_mode"].as_str().unwrap_or("EveryTick");
+    let events_json = serde_json::to_string(&result["events"]).unwrap_or_default();
+    let modeling_quality = summary["modeling_quality"].as_f64().unwrap_or(0.0);
+    let gross_profit = summary["gross_profit"].as_f64().unwrap_or(0.0);
+    let gross_loss = summary["gross_loss"].as_f64().unwrap_or(0.0);
+    let sortino_ratio = summary["sortino_ratio"].as_f64().unwrap_or(0.0);
+    let calmar_ratio = summary["calmar_ratio"].as_f64().unwrap_or(0.0);
+    let recovery_factor = summary["recovery_factor"].as_f64().unwrap_or(0.0);
+    let expected_payoff = summary["expected_payoff"].as_f64().unwrap_or(0.0);
+    let max_consecutive_wins = summary["max_consecutive_wins"].as_i64().unwrap_or(0) as i32;
+    let max_consecutive_losses = summary["max_consecutive_losses"].as_i64().unwrap_or(0) as i32;
+    let max_drawdown_duration = summary["max_drawdown_duration"].as_i64().unwrap_or(0);
+    let avg_trade_duration = summary["avg_trade_duration"].as_f64().unwrap_or(0.0);
+    let return_on_account = summary["return_on_account"].as_f64().unwrap_or(0.0);
+    let long_trades = summary["long_trades"].as_i64().unwrap_or(0) as i32;
+    let short_trades = summary["short_trades"].as_i64().unwrap_or(0) as i32;
+    let winning_long_pct = summary["winning_long_pct"].as_f64().unwrap_or(0.0);
+    let winning_short_pct = summary["winning_short_pct"].as_f64().unwrap_or(0.0);
+    let bars_in_test = summary["bars_in_test"].as_i64().unwrap_or(0) as i32;
+    let ticks_processed = summary["ticks_processed"].as_i64().unwrap_or(0);
+
     match sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
         INSERT INTO backtest_results (
@@ -920,8 +1090,16 @@ async fn save_backtest(
             initial_balance, final_balance, net_profit,
             total_trades, winning_trades, losing_trades, win_rate,
             max_drawdown, max_drawdown_pct, sharpe_ratio, profit_factor,
-            avg_win, avg_loss, trade_history, equity_curve, strategy_code
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+            avg_win, avg_loss, trade_history, equity_curve, strategy_code,
+            testing_mode, events, modeling_quality,
+            gross_profit, gross_loss, sortino_ratio, calmar_ratio,
+            recovery_factor, expected_payoff,
+            max_consecutive_wins, max_consecutive_losses,
+            max_drawdown_duration, avg_trade_duration, return_on_account,
+            long_trades, short_trades, winning_long_pct, winning_short_pct,
+            bars_in_test, ticks_processed
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
+                  $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42)
         RETURNING id
         "#,
     )
@@ -946,6 +1124,26 @@ async fn save_backtest(
     .bind(&trade_json)
     .bind(&equity_json)
     .bind(request["strategy_code"].as_str().unwrap_or(""))
+    .bind(testing_mode)
+    .bind(&events_json)
+    .bind(modeling_quality)
+    .bind(gross_profit)
+    .bind(gross_loss)
+    .bind(sortino_ratio)
+    .bind(calmar_ratio)
+    .bind(recovery_factor)
+    .bind(expected_payoff)
+    .bind(max_consecutive_wins)
+    .bind(max_consecutive_losses)
+    .bind(max_drawdown_duration)
+    .bind(avg_trade_duration)
+    .bind(return_on_account)
+    .bind(long_trades)
+    .bind(short_trades)
+    .bind(winning_long_pct)
+    .bind(winning_short_pct)
+    .bind(bars_in_test)
+    .bind(ticks_processed)
     .fetch_one(db)
     .await
     {
@@ -986,6 +1184,7 @@ async fn get_backtest_by_id(
     {
         Ok(Some(row)) => {
             use sqlx::Row;
+            let events_val: serde_json::Value = row.try_get::<serde_json::Value, _>("events").unwrap_or(serde_json::json!([]));
             let result = serde_json::json!({
                 "id": row.get::<uuid::Uuid, _>("id").to_string(),
                 "strategy_name": row.get::<String, _>("strategy_name"),
@@ -1009,6 +1208,26 @@ async fn get_backtest_by_id(
                 "trade_history": serde_json::from_str::<serde_json::Value>(&row.get::<String, _>("trade_history")).unwrap_or_default(),
                 "equity_curve": serde_json::from_str::<serde_json::Value>(&row.get::<String, _>("equity_curve")).unwrap_or_default(),
                 "strategy_code": row.get::<String, _>("strategy_code"),
+                "testing_mode": row.try_get::<String, _>("testing_mode").unwrap_or_default(),
+                "events": events_val,
+                "modeling_quality": row.try_get::<f64, _>("modeling_quality").unwrap_or(0.0),
+                "gross_profit": row.try_get::<f64, _>("gross_profit").unwrap_or(0.0),
+                "gross_loss": row.try_get::<f64, _>("gross_loss").unwrap_or(0.0),
+                "sortino_ratio": row.try_get::<f64, _>("sortino_ratio").unwrap_or(0.0),
+                "calmar_ratio": row.try_get::<f64, _>("calmar_ratio").unwrap_or(0.0),
+                "recovery_factor": row.try_get::<f64, _>("recovery_factor").unwrap_or(0.0),
+                "expected_payoff": row.try_get::<f64, _>("expected_payoff").unwrap_or(0.0),
+                "max_consecutive_wins": row.try_get::<i32, _>("max_consecutive_wins").unwrap_or(0),
+                "max_consecutive_losses": row.try_get::<i32, _>("max_consecutive_losses").unwrap_or(0),
+                "max_drawdown_duration": row.try_get::<i64, _>("max_drawdown_duration").unwrap_or(0),
+                "avg_trade_duration": row.try_get::<f64, _>("avg_trade_duration").unwrap_or(0.0),
+                "return_on_account": row.try_get::<f64, _>("return_on_account").unwrap_or(0.0),
+                "long_trades": row.try_get::<i32, _>("long_trades").unwrap_or(0),
+                "short_trades": row.try_get::<i32, _>("short_trades").unwrap_or(0),
+                "winning_long_pct": row.try_get::<f64, _>("winning_long_pct").unwrap_or(0.0),
+                "winning_short_pct": row.try_get::<f64, _>("winning_short_pct").unwrap_or(0.0),
+                "bars_in_test": row.try_get::<i32, _>("bars_in_test").unwrap_or(0),
+                "ticks_processed": row.try_get::<i64, _>("ticks_processed").unwrap_or(0),
                 "created_at": row.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
             });
             (axum::http::StatusCode::OK, Json(result))
@@ -1034,7 +1253,9 @@ async fn list_backtests(
 
     match sqlx::query(
         r#"
-        SELECT id, strategy_name, symbol, timeframe, initial_balance, final_balance, net_profit, total_trades, win_rate, created_at
+        SELECT id, strategy_name, symbol, timeframe, initial_balance, final_balance, net_profit, total_trades,
+               win_rate, gross_profit, gross_loss, profit_factor, max_drawdown_pct, sharpe_ratio, sortino_ratio,
+               testing_mode, modeling_quality, created_at
         FROM backtest_results
         ORDER BY created_at DESC
         LIMIT 50
@@ -1056,6 +1277,14 @@ async fn list_backtests(
                     "net_profit": r.get::<f64, _>("net_profit"),
                     "total_trades": r.get::<i32, _>("total_trades"),
                     "win_rate": r.get::<f64, _>("win_rate"),
+                    "gross_profit": r.try_get::<f64, _>("gross_profit").unwrap_or(0.0),
+                    "gross_loss": r.try_get::<f64, _>("gross_loss").unwrap_or(0.0),
+                    "profit_factor": r.try_get::<f64, _>("profit_factor").unwrap_or(0.0),
+                    "max_drawdown_pct": r.try_get::<f64, _>("max_drawdown_pct").unwrap_or(0.0),
+                    "sharpe_ratio": r.try_get::<f64, _>("sharpe_ratio").unwrap_or(0.0),
+                    "sortino_ratio": r.try_get::<f64, _>("sortino_ratio").unwrap_or(0.0),
+                    "testing_mode": r.try_get::<String, _>("testing_mode").unwrap_or_default(),
+                    "modeling_quality": r.try_get::<f64, _>("modeling_quality").unwrap_or(0.0),
                     "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
                 })
             }).collect();
@@ -1230,7 +1459,7 @@ async fn list_exchanges(
 }
 
 async fn set_active_exchange(
-    State(state): State<Arc<AppState>>,
+    State(_state): State<Arc<AppState>>,
     Json(payload): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     let exchange_id = payload.get("exchange").and_then(|v| v.as_str()).unwrap_or("binance");

@@ -2,6 +2,27 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum TestingMode {
+    EveryTick,
+    ControlPoints,
+    OpenPricesOnly,
+}
+
+impl Default for TestingMode {
+    fn default() -> Self {
+        Self::EveryTick
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BacktestEvent {
+    pub timestamp: u64,
+    pub event_type: String,
+    pub description: String,
+    pub details: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Tick {
     pub symbol: String,
@@ -260,6 +281,10 @@ pub struct BacktestRequest {
     pub slippage: f64,
     #[serde(default = "default_speed")]
     pub speed: u32,
+    #[serde(default)]
+    pub testing_mode: TestingMode,
+    #[serde(default)]
+    pub visual: bool,
 }
 
 fn default_speed() -> u32 { 1 }
@@ -269,6 +294,8 @@ pub struct BacktestProgress {
     pub progress: f64,
     pub trades: Vec<BacktestTrade>,
     pub equity_curve: Vec<EquityPoint>,
+    pub events: Vec<BacktestEvent>,
+    pub current_candle: Option<Candle>,
     pub done: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<BacktestResultSummary>,
@@ -314,12 +341,30 @@ pub struct BacktestResultSummary {
     pub max_drawdown: f64,
     pub max_drawdown_pct: f64,
     pub sharpe_ratio: f64,
+    pub sortino_ratio: f64,
+    pub calmar_ratio: f64,
     pub profit_factor: f64,
+    pub recovery_factor: f64,
+    pub expected_payoff: f64,
     pub avg_win: f64,
     pub avg_loss: f64,
     pub largest_win: f64,
     pub largest_loss: f64,
     pub avg_holding_bars: f64,
+    pub gross_profit: f64,
+    pub gross_loss: f64,
+    pub max_consecutive_wins: u32,
+    pub max_consecutive_losses: u32,
+    pub max_drawdown_duration: u64,
+    pub avg_trade_duration: f64,
+    pub return_on_account: f64,
+    pub long_trades: u32,
+    pub short_trades: u32,
+    pub winning_long_pct: f64,
+    pub winning_short_pct: f64,
+    pub modeling_quality: f64,
+    pub bars_in_test: u32,
+    pub ticks_processed: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -327,7 +372,41 @@ pub struct BacktestResult {
     pub summary: BacktestResultSummary,
     pub trades: Vec<BacktestTrade>,
     pub equity_curve: Vec<EquityPoint>,
+    pub events: Vec<BacktestEvent>,
     pub request: BacktestRequest,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PrepareDataRequest {
+    pub symbol: String,
+    pub timeframe: String,
+    pub testing_mode: TestingMode,
+    pub start_time: u64,
+    pub end_time: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PrepareDataResponse {
+    pub status: String,
+    pub total_candles: u32,
+    pub total_ticks: u64,
+    pub start_time: u64,
+    pub end_time: u64,
+    pub modeling_quality: f64,
+}
+
+pub enum PreparedData {
+    Candles(Vec<Candle>),
+    Ticks(Vec<Tick>),
+}
+
+impl PreparedData {
+    pub fn count(&self) -> usize {
+        match self {
+            PreparedData::Candles(c) => c.len(),
+            PreparedData::Ticks(t) => t.len(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

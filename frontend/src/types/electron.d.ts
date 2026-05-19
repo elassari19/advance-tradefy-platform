@@ -10,6 +10,12 @@ interface ElectronAPI {
   minimizeWindow: () => void;
   maximizeWindow: () => void;
   closeWindow: () => void;
+  isMaximized: () => Promise<boolean>;
+  onMaximizedChanged: (callback: (maximized: boolean) => void) => void;
+  openAbout: () => Promise<void>;
+  onOpenFile: (callback: (filePath: string) => void) => void;
+  saveHtmlReport: (htmlContent: string) => Promise<string | null>;
+  savePngGraph: (base64Data: string) => Promise<string | null>;
 }
 
 declare global {

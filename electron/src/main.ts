@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, Notification, dialog, session, Tray, nativeImage, crashReporter } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, Notification, dialog, session, Tray, nativeImage, crashReporter, SaveDialogOptions } from 'electron';
 import path from 'path';
 import net from 'net';
 import { autoUpdater } from 'electron-updater';
@@ -411,6 +411,31 @@ function registerIpcHandlers() {
     if (Notification.isSupported()) {
       new Notification({ title, body }).show();
     }
+  });
+
+  ipcMain.handle('backtest:save-html', async (_event, htmlContent: string) => {
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      defaultPath: 'backtest-report.html',
+      filters: [{ name: 'HTML', extensions: ['html'] }],
+    });
+    if (!result.canceled && result.filePath) {
+      await import('fs').then(fs => fs.promises.writeFile(result.filePath!, htmlContent, 'utf-8'));
+      return result.filePath;
+    }
+    return null;
+  });
+
+  ipcMain.handle('backtest:save-png', async (_event, base64Data: string) => {
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      defaultPath: 'backtest-chart.png',
+      filters: [{ name: 'PNG', extensions: ['png'] }],
+    });
+    if (!result.canceled && result.filePath) {
+      const buffer = Buffer.from(base64Data, 'base64');
+      await import('fs').then(fs => fs.promises.writeFile(result.filePath!, buffer));
+      return result.filePath;
+    }
+    return null;
   });
 
   ipcMain.on('window:minimize', () => {

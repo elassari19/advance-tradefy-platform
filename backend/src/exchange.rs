@@ -14,6 +14,12 @@ pub trait ExchangeStream: Send + Sync {
         start_time: u64,
         end_time: u64,
     ) -> Result<Vec<Candle>, String>;
+    fn fetch_tick_history(
+        &self,
+        symbol: &str,
+        start_time: u64,
+        end_time: u64,
+    ) -> Result<Vec<Tick>, String>;
     fn parse_tick(&self, raw: &str) -> Option<Tick>;
 }
 
@@ -82,6 +88,62 @@ impl ExchangeStream for BinanceStream {
         Ok(candles)
     }
 
+    fn fetch_tick_history(
+        &self,
+        symbol: &str,
+        start_time: u64,
+        end_time: u64,
+    ) -> Result<Vec<Tick>, String> {
+        let mut all_ticks = Vec::new();
+        let mut from_id: Option<u64> = None;
+
+        loop {
+            let mut url = format!(
+                "https://api.binance.com/api/v3/aggTrades?symbol={}&startTime={}&endTime={}&limit=1000",
+                symbol,
+                start_time * 1000,
+                end_time * 1000
+            );
+            if let Some(fid) = from_id {
+                url = format!("{}&fromId={}", url, fid);
+            }
+
+            let resp = reqwest::blocking::get(&url)
+                .map_err(|e| format!("Failed to fetch aggTrades from Binance: {}", e))?;
+
+            let trades: Vec<serde_json::Value> = resp
+                .json()
+                .map_err(|e| format!("Failed to parse Binance aggTrades: {}", e))?;
+
+            if trades.is_empty() {
+                break;
+            }
+
+            for t in &trades {
+                let trade_id = t.get("a").and_then(|v| v.as_u64()).unwrap_or(0);
+                let price = t.get("p").and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+                let _qty = t.get("q").and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+                let time = t.get("T").and_then(|v| v.as_u64()).unwrap_or(0);
+
+                all_ticks.push(Tick {
+                    symbol: symbol.to_string(),
+                    price,
+                    time: time / 1000,
+                });
+
+                from_id = Some(trade_id + 1);
+            }
+
+            if trades.len() < 1000 {
+                break;
+            }
+        }
+
+        Ok(all_ticks)
+    }
+
     fn parse_tick(&self, raw: &str) -> Option<Tick> {
         let binance_tick: BinanceTicker = serde_json::from_str(raw).ok()?;
         Some(Tick {
@@ -121,6 +183,16 @@ impl ExchangeStream for BybitStream {
         Err("Bybit not yet implemented".to_string())
     }
 
+    fn fetch_tick_history(
+        &self,
+        _symbol: &str,
+        _start_time: u64,
+        _end_time: u64,
+    ) -> Result<Vec<Tick>, String> {
+        tracing::warn!("Bybit tick history not yet implemented");
+        Err("Bybit not yet implemented".to_string())
+    }
+
     fn parse_tick(&self, _raw: &str) -> Option<Tick> {
         tracing::warn!("Bybit not yet implemented");
         None
@@ -153,6 +225,16 @@ impl ExchangeStream for CoinbaseStream {
         _end_time: u64,
     ) -> Result<Vec<Candle>, String> {
         tracing::warn!("Coinbase not yet implemented");
+        Err("Coinbase not yet implemented".to_string())
+    }
+
+    fn fetch_tick_history(
+        &self,
+        _symbol: &str,
+        _start_time: u64,
+        _end_time: u64,
+    ) -> Result<Vec<Tick>, String> {
+        tracing::warn!("Coinbase tick history not yet implemented");
         Err("Coinbase not yet implemented".to_string())
     }
 

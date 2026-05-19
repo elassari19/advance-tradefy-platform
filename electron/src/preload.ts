@@ -36,4 +36,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onOpenFile: (callback: (filePath: string) => void) => {
     ipcRenderer.on('file:opened', (_event, filePath) => callback(filePath));
   },
+
+  // ── Backtest Report Export ──
+  saveHtmlReport: (htmlContent: string) =>
+    ipcRenderer.invoke('backtest:save-html', htmlContent),
+  savePngGraph: (base64Data: string) =>
+    ipcRenderer.invoke('backtest:save-png', base64Data),
 });
