@@ -42,4 +42,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('backtest:save-html', htmlContent),
   savePngGraph: (base64Data: string) =>
     ipcRenderer.invoke('backtest:save-png', base64Data),
+
+  // ── Backtest Data Flow (IPC proxy for HTTP requests only; WebSocket is direct) ──
+  prepareBacktestData: (req: any) =>
+    ipcRenderer.invoke('backtest:prepare-data', req),
+  fetchBacktestHistory: (params: { symbol: string; interval: string; limit: number }) =>
+    ipcRenderer.invoke('backtest:fetch-history', params),
 });

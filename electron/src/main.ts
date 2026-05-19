@@ -438,6 +438,38 @@ function registerIpcHandlers() {
     return null;
   });
 
+  // ── Backtest Data Flow (proxy HTTP requests to Rust backend) ──
+  ipcMain.handle('backtest:prepare-data', async (_event, req: any) => {
+    try {
+      const res = await fetch('http://127.0.0.1:3000/api/backtest/prepare-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle('backtest:fetch-history', async (_event, params: { symbol: string; interval: string; limit: number }) => {
+    try {
+      const url = `http://127.0.0.1:3000/api/history?symbol=${encodeURIComponent(params.symbol)}&interval=${encodeURIComponent(params.interval)}&limit=${params.limit}`;
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return data.map((c: any) => ({
+          time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
+        }));
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  });
+
   ipcMain.on('window:minimize', () => {
     mainWindow?.minimize();
   });

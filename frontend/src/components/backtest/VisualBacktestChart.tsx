@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
-import { createChart, ColorType, CandlestickSeries, LineSeries } from 'lightweight-charts';
-import type { IChartApi, ISeriesApi } from 'lightweight-charts';
+import { createChart, ColorType, CandlestickSeries, LineSeries, createSeriesMarkers } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, ISeriesMarkersPluginApi, Time } from 'lightweight-charts';
 import type { BacktestTrade } from '../../hooks/useBacktest';
 
 interface VisualBacktestChartProps {
@@ -33,6 +33,7 @@ export const VisualBacktestChart: React.FC<VisualBacktestChartProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const lineSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
   const priceLinesRef = useRef<Map<string, ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']>>>(new Map());
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
@@ -104,6 +105,7 @@ export const VisualBacktestChart: React.FC<VisualBacktestChartProps> = ({
       wickDownColor: '#ef4444',
     });
     candleSeriesRef.current = series;
+    markersPluginRef.current = createSeriesMarkers(series);
 
     const handleResize = () => {
       if (containerRef.current) {
@@ -118,9 +120,11 @@ export const VisualBacktestChart: React.FC<VisualBacktestChartProps> = ({
     return () => {
       window.removeEventListener('resize', handleResize);
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
+      markersPluginRef.current?.detach();
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
+      markersPluginRef.current = null;
     };
   }, [handleCrosshairMove]);
 
@@ -139,9 +143,9 @@ export const VisualBacktestChart: React.FC<VisualBacktestChartProps> = ({
     // Highlight current candle with marker
     if (visibleCandles.length > 0) {
       const last = visibleCandles[visibleCandles.length - 1];
-      series.setMarkers([
+      markersPluginRef.current?.setMarkers([
         {
-          time: last.time as any,
+          time: last.time as Time,
           position: 'inBar',
           color: '#3b82f6',
           shape: 'arrowUp',
@@ -150,7 +154,7 @@ export const VisualBacktestChart: React.FC<VisualBacktestChartProps> = ({
         },
       ]);
     } else {
-      series.setMarkers([]);
+      markersPluginRef.current?.setMarkers([]);
     }
 
     if (chartRef.current) {

@@ -260,15 +260,18 @@ export function App() {
     const isVisual = req.visual;
 
     // Step 1: Prepare data
-    if (prepareData) {
+    if (prepareData || window.electronAPI) {
       setPrepDataStatus('Preparing data...');
-      const prep = await prepareData({
+      const prepReq = {
         symbol: req.symbol,
         timeframe: req.timeframe,
         testing_mode: req.testing_mode || 'EveryTick',
         start_time: req.start_time,
         end_time: req.end_time,
-      });
+      };
+      const prep = window.electronAPI
+        ? await window.electronAPI.prepareBacktestData(prepReq)
+        : await prepareData(prepReq);
       if (prep) {
         setBacktestTotalCandles(prep.total_candles);
         setPrepDataStatus(`Data ready: ${prep.total_candles} candles, ${prep.total_ticks} ticks`);
@@ -287,87 +290,86 @@ export function App() {
 
       // Fetch candles for visual display
       try {
-        const res = await fetch(`http://127.0.0.1:3000/api/history?symbol=${req.symbol}&interval=${req.timeframe}&limit=500`);
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            setVisualBacktestAllCandles(data.map((c: any) => ({
-              time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
-            })));
-          }
+        const data = window.electronAPI
+          ? await window.electronAPI.fetchBacktestHistory({ symbol: req.symbol, interval: req.timeframe, limit: 500 })
+          : await fetch(`http://127.0.0.1:3000/api/history?symbol=${req.symbol}&interval=${req.timeframe}&limit=500`).then(r => r.ok ? r.json() : []);
+        if (Array.isArray(data)) {
+          setVisualBacktestAllCandles(data.map((c: any) => ({
+            time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
+          })));
         }
       } catch {}
 
+      // ── Handle incoming progress data (shared between IPC & fallback) ──
+      // Backend BacktestProgress format: {progress, trades, equity_curve, events, current_candle, done, summary}
+      // Error format: {error: "..."}
+      const handleProgressData = (data: any, finalTradesRef: { current: BacktestTrade[] }) => {
+        try {
+          // Error
+          if (data.error) {
+            addToast(data.error, 'error');
+            setLiveBacktestRunning(false);
+            setPrepDataStatus('');
+            return;
+          }
+
+          // Done / final message
+          if (data.done) {
+            console.log('[backtest-renderer] DONE received, trades:', finalTradesRef.current.length, 'hasSummary:', !!data.summary);
+            if (data.summary) {
+              // Completed with results
+              setBacktestResult({
+                summary: data.summary,
+                trades: finalTradesRef.current,
+                equity_curve: data.equity_curve || [],
+                events: data.events || [],
+                request: req as any,
+              });
+              setActiveTesterTab('results');
+              if (window.electronAPI) {
+                window.electronAPI.showNotification('Backtest Complete', `${finalTradesRef.current.length} trades, ${data.summary.net_profit >= 0 ? '+' : ''}$${data.summary.net_profit.toFixed(2)} profit`);
+              }
+            }
+            setLiveBacktestRunning(false);
+            setLiveBacktestProgress(1);
+            setBacktestCursorTime(undefined);
+            setPrepDataStatus('');
+            addToast(`Backtest complete: ${finalTradesRef.current.length} trades`, 'success');
+            return;
+          }
+
+          // Progress message
+          console.log('[backtest-renderer] PROGRESS:', data.progress, 'hasCurrentCandle:', !!data.current_candle, 'trades:', data.trades?.length, 'events:', data.events?.length);
+          setLiveBacktestProgress(data.progress);
+          if (data.current_candle) {
+            setCurrentBarIndex(prev => prev + 1);
+          }
+          if (data.equity_curve && data.equity_curve.length > 0) {
+            const last = data.equity_curve[data.equity_curve.length - 1];
+            setBacktestCursorTime(last.time);
+          }
+          if (data.events) {
+            setBacktestEvents(prev => [...prev, ...data.events]);
+          }
+          if (data.trades) {
+            finalTradesRef.current = data.trades;
+            backtestTradesRef.current = data.trades;
+            setBacktestTradesState(data.trades);
+          }
+        } catch (e) {
+          console.error('[backtest-renderer] Error in handleProgressData:', e);
+        }
+      };
+
+      // ── Direct WebSocket (streaming progress from Rust backend) ──
       const ws = new WebSocket('ws://127.0.0.1:3000/ws/backtest');
       backtestWsRef.current = ws;
 
       ws.onopen = () => ws.send(JSON.stringify(req));
 
-      let finalTrades: BacktestTrade[] = [];
+      const finalTradesRef: { current: BacktestTrade[] } = { current: [] };
 
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'started') {
-            setBacktestTotalCandles(data.total_candles);
-            addToast(`Backtest started: ${data.total_candles} candles`, 'info');
-          } else if (data.type === 'progress') {
-            setLiveBacktestProgress(data.progress);
-            if (data.current_candle) {
-              setCurrentBarIndex(prev => prev + 1);
-            }
-            if (data.equity_curve && data.equity_curve.length > 0) {
-              const last = data.equity_curve[data.equity_curve.length - 1];
-              setBacktestCursorTime(last.time);
-            }
-            if (data.events) {
-              setBacktestEvents(prev => [...prev, ...data.events]);
-            }
-            if (data.trades) {
-              finalTrades = data.trades;
-              backtestTradesRef.current = data.trades;
-              setBacktestTradesState(data.trades);
-            }
-            if (data.done) {
-              setLiveBacktestRunning(false);
-              setLiveBacktestProgress(1);
-              setBacktestCursorTime(undefined);
-              setPrepDataStatus('');
-              addToast(`Backtest complete: ${finalTrades.length} trades`, 'success');
-              ws.close();
-              if (data.summary) {
-                setBacktestResult({
-                  summary: data.summary,
-                  trades: finalTrades,
-                  equity_curve: data.equity_curve || [],
-                  events: data.events || [],
-                  request: req as any,
-                });
-                setActiveTesterTab('results');
-                if (window.electronAPI) {
-                  window.electronAPI.showNotification('Backtest Complete', `${finalTrades.length} trades, ${data.summary.net_profit >= 0 ? '+' : ''}$${data.summary.net_profit.toFixed(2)} profit`);
-                }
-              }
-            }
-          } else if (data.type === 'paused') {
-            setLiveBacktestPaused(true);
-          } else if (data.type === 'continued') {
-            setLiveBacktestPaused(false);
-          } else if (data.type === 'stopped') {
-            setLiveBacktestRunning(false);
-            setLiveBacktestPaused(false);
-            setBacktestCursorTime(undefined);
-            setPrepDataStatus('');
-            addToast('Backtest stopped', 'info');
-            ws.close();
-          } else if (data.type === 'error') {
-            addToast(data.error, 'error');
-            setLiveBacktestRunning(false);
-            setPrepDataStatus('');
-            ws.close();
-          }
-        } catch {}
-      };
+      ws.onmessage = (event) => handleProgressData(JSON.parse(event.data), finalTradesRef);
 
       ws.onerror = () => {
         addToast('WebSocket connection failed', 'error');
