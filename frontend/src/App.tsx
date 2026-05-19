@@ -874,24 +874,26 @@ export function App() {
                     onClearAll={() => setDrawings([])}
                   />
                   {currentStrategyActive && (
-                    <div className="absolute top-2 left-12 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-900/90 border border-zinc-700/50 shadow-lg backdrop-blur-sm">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                      <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Strategy</span>
-                      <div className="w-px h-3 bg-zinc-700 mx-1" />
-                      <button
-                        onClick={() => setRightPanel(prev => prev === 'strategy' ? null : 'strategy')}
-                        className="text-[9px] font-bold text-zinc-500 hover:text-zinc-200 px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors"
-                        title="Edit strategy"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleRemoveStrategy(activeSymbol)}
-                        className="text-zinc-500 hover:text-red-400 p-0.5 rounded hover:bg-red-500/10 transition-colors"
-                        title="Remove from chart"
-                      >
-                        <X size={11} />
-                      </button>
+                    <div className="absolute top-0 left-12 right-0 z-20 flex items-center gap-0 px-3 h-9 bg-zinc-950/90 border-b border-zinc-800/50 backdrop-blur-sm overflow-x-auto scrollbar-none">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-700/60 shadow-sm shrink-0">
+                        <span className="w-2 h-2 rounded-full bg-[#bfff1d] shadow-sm shadow-[#bfff1d]/40" />
+                        <span className="text-[11px] font-semibold text-zinc-200">strategy</span>
+                        <div className="w-px h-3.5 bg-zinc-700 mx-1" />
+                        <button
+                          onClick={() => setRightPanel('strategy')}
+                          className="text-zinc-500 hover:text-zinc-200 p-0.5 rounded hover:bg-zinc-800 transition-colors"
+                          title="Settings"
+                        >
+                          <Settings size={12} />
+                        </button>
+                        <button
+                          onClick={() => handleRemoveStrategy(activeSymbol)}
+                          className="text-zinc-500 hover:text-red-400 p-0.5 rounded hover:bg-red-500/10 transition-colors"
+                          title="Remove"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
                     </div>
                   )}
                   <TabChart
