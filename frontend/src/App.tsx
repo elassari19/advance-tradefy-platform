@@ -140,7 +140,9 @@ export function App() {
   const backtestWsRef = useRef<WebSocket | null>(null);
   const backtestContainerRef = useRef<HTMLDivElement>(null);
   const [backtestSplitRatio, setBacktestSplitRatio] = useState(0.67);
-  const isDragging = useRef(false);
+  const tradeContainerRef = useRef<HTMLDivElement>(null);
+  const [tradeSplitRatio, setTradeSplitRatio] = useState(0.75);
+  const draggingView = useRef<'backtest' | 'trade' | null>(null);
 
   // ── Alert State ──
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
@@ -276,26 +278,35 @@ export function App() {
     }
   }, []);
 
-  // Resize handler for backtest split panes
+  // Resize handler for split panes (backtest + trade)
   useEffect(() => {
     let rafId: number | null = null;
 
     const onMouseMove = (e: MouseEvent) => {
-      if (!isDragging.current) return;
+      if (!draggingView.current) return;
       if (rafId !== null) return;
       rafId = requestAnimationFrame(() => {
         rafId = null;
-        const container = backtestContainerRef.current;
-        if (!container) return;
-        const rect = container.getBoundingClientRect();
-        let ratio = (e.clientY - rect.top) / rect.height;
-        ratio = Math.max(0.2, Math.min(0.7, ratio));
-        setBacktestSplitRatio(ratio);
+        if (draggingView.current === 'backtest') {
+          const container = backtestContainerRef.current;
+          if (!container) return;
+          const rect = container.getBoundingClientRect();
+          let ratio = (e.clientY - rect.top) / rect.height;
+          ratio = Math.max(0.2, Math.min(0.7, ratio));
+          setBacktestSplitRatio(ratio);
+        } else {
+          const container = tradeContainerRef.current;
+          if (!container) return;
+          const rect = container.getBoundingClientRect();
+          let ratio = (e.clientY - rect.top) / rect.height;
+          ratio = Math.max(0.15, Math.min(0.85, ratio));
+          setTradeSplitRatio(ratio);
+        }
       });
     };
 
     const onMouseUp = () => {
-      isDragging.current = false;
+      draggingView.current = null;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       if (rafId !== null) {
@@ -736,8 +747,12 @@ export function App() {
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 flex flex-col">
-              <div className="flex-1 min-h-0 flex">
+            <div ref={tradeContainerRef} className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              {/* Top section: Chart */}
+              <div
+                className="shrink-0 overflow-hidden flex"
+                style={{ height: `${tradeSplitRatio * 100}%` }}
+              >
                 <div className="flex-1 min-h-0 relative">
                   <DrawingToolbar
                     activeTool={drawingTool}
@@ -773,7 +788,21 @@ export function App() {
                   />
                 </motion.div>
               </div>
-              <div className="h-[180px] shrink-0 border-t border-zinc-800">
+
+              {/* Drag handle */}
+              <div
+                className="shrink-0 h-2 cursor-row-resize bg-transparent hover:bg-blue-500/20 active:bg-blue-500/30 relative flex items-center justify-center transition-colors group z-10"
+                onMouseDown={() => {
+                  draggingView.current = 'trade';
+                  document.body.style.cursor = 'row-resize';
+                  document.body.style.userSelect = 'none';
+                }}
+              >
+                <div className="w-8 h-0.5 rounded-full bg-zinc-700 group-hover:bg-blue-400 transition-colors" />
+              </div>
+
+              {/* Bottom section: Terminal tabs */}
+              <div className="flex-1 min-h-0 border-t border-zinc-800">
                 <TerminalTabs
                   positions={simState.open_positions}
                   history={simState.history}
@@ -831,7 +860,7 @@ export function App() {
           <div
             className="shrink-0 h-2 cursor-row-resize bg-transparent hover:bg-blue-500/20 active:bg-blue-500/30 relative flex items-center justify-center transition-colors group z-10"
             onMouseDown={() => {
-              isDragging.current = true;
+              draggingView.current = 'backtest';
               document.body.style.cursor = 'row-resize';
               document.body.style.userSelect = 'none';
             }}
