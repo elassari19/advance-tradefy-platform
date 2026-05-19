@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Loader2, FolderOpen, FileCode, Radio } from 'lucide-react';
+import { Play, Loader2, FolderOpen, FileCode } from 'lucide-react';
 import type { BacktestRequest, TestingMode } from '../../hooks/useBacktest';
 
 const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT', 'ADA/USDT', 'DOGE/USDT', 'DOT/USDT'];
@@ -71,209 +71,211 @@ export const TesterSettings: React.FC<TesterSettingsProps> = ({ strategyCode, on
   ];
 
   return (
-    <div className="space-y-5">
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3">
-        <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Expert Advisor</h4>
+    <div className="space-y-4 max-w-5xl">
+      {/* Expert Advisor - full width */}
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Expert Advisor</h4>
+          <span className="text-[10px] text-zinc-600 font-mono">{strategyCode.length} chars</span>
+        </div>
         <div className="flex items-center gap-2">
-          <div className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 flex items-center gap-3">
+          <div className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 flex items-center gap-3">
             <FileCode size={14} className="text-zinc-500 shrink-0" />
             <span className="text-xs text-zinc-400 font-mono truncate flex-1">
               {isDefault ? 'No strategy selected' : strategyLabel}
             </span>
-            <span className="text-[10px] text-zinc-600 font-mono shrink-0">
-              {strategyCode.length} chars
-            </span>
           </div>
           <button
             onClick={onLoadStrategy}
-            className="flex items-center gap-1 px-2.5 py-2 rounded text-[10px] font-bold text-zinc-400 hover:text-zinc-200 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 transition-all"
+            className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-[11px] font-bold text-zinc-400 hover:text-zinc-200 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 transition-all"
           >
-            <FolderOpen size={12} />
+            <FolderOpen size={13} />
             Browse
           </button>
         </div>
       </div>
 
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3">
-        <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Symbol / Timeframe</h4>
-        <div className="flex gap-2">
-          <select
-            value={symbol}
-            onChange={e => setSymbol(e.target.value)}
-            className="flex-1 bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[11px] text-zinc-200 font-mono"
-          >
-            {SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select
-            value={timeframe}
-            onChange={e => setTimeframe(e.target.value)}
-            className="w-20 bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[11px] text-zinc-200 font-mono"
-          >
-            {TIMEFRAMES.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-      </div>
-
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3">
-        <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Testing Period</h4>
-        <div className="flex gap-1 mb-2">
-          {[
-            { value: 'all' as const, label: 'All history' },
-            { value: '1m' as const, label: '1 month' },
-            { value: '3m' as const, label: '3 months' },
-            { value: '1y' as const, label: '1 year' },
-            { value: 'custom' as const, label: 'Custom' },
-          ].map(p => (
-            <button
-              key={p.value}
-              onClick={() => handlePeriodPreset(p.value)}
-              className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${
-                periodPreset === p.value
-                  ? 'bg-blue-600/20 border border-blue-500/40 text-blue-400'
-                  : 'bg-zinc-950 border border-zinc-800 text-zinc-500 hover:text-zinc-300'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        {periodPreset === 'custom' && (
+      {/* Two-column grid for Symbol/Timeframe + Testing Period */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+          <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-3">Symbol / Timeframe</h4>
           <div className="flex gap-2">
-            <input
-              type="date"
-              value={startDate}
-              onChange={e => setStartDate(e.target.value)}
-              className="flex-1 bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[11px] text-zinc-200 font-mono"
-            />
-            <span className="text-zinc-600 text-xs self-center">→</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={e => setEndDate(e.target.value)}
-              className="flex-1 bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[11px] text-zinc-200 font-mono"
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3">
-        <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Testing Mode</h4>
-        <div className="space-y-1.5">
-          {testingModeOptions.map(opt => (
-            <label
-              key={opt.value}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all border ${
-                testingMode === opt.value
-                  ? 'bg-blue-600/10 border-blue-500/30'
-                  : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'
-              }`}
+            <select
+              value={symbol}
+              onChange={e => setSymbol(e.target.value)}
+              className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 font-mono"
             >
+              {SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select
+              value={timeframe}
+              onChange={e => setTimeframe(e.target.value)}
+              className="w-24 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 font-mono"
+            >
+              {TIMEFRAMES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+          <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-3">Testing Period</h4>
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {[
+              { value: 'all' as const, label: 'All history' },
+              { value: '1m' as const, label: '1 month' },
+              { value: '3m' as const, label: '3 months' },
+              { value: '1y' as const, label: '1 year' },
+              { value: 'custom' as const, label: 'Custom' },
+            ].map(p => (
+              <button
+                key={p.value}
+                onClick={() => handlePeriodPreset(p.value)}
+                className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${
+                  periodPreset === p.value
+                    ? 'bg-blue-600/20 border border-blue-500/40 text-blue-400'
+                    : 'bg-zinc-950 border border-zinc-800 text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {periodPreset === 'custom' && (
+            <div className="flex items-center gap-2">
               <input
-                type="radio"
-                name="testingMode"
-                checked={testingMode === opt.value}
-                onChange={() => setTestingMode(opt.value)}
-                className="accent-blue-500"
+                type="date"
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+                className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 font-mono"
               />
-              <div>
-                <div className={`text-xs font-bold ${testingMode === opt.value ? 'text-blue-400' : 'text-zinc-300'}`}>
-                  {opt.label}
-                </div>
-                <div className="text-[10px] text-zinc-500">{opt.desc}</div>
-              </div>
-            </label>
-          ))}
+              <span className="text-zinc-600 text-xs shrink-0">→</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+                className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 font-mono"
+              />
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3">
-        <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Parameters</h4>
-        <div className="grid grid-cols-3 gap-2">
-          <div>
-            <label className="text-[9px] font-bold text-zinc-500 block mb-1">Initial Balance</label>
-            <input
-              type="number"
-              value={initialCapital}
-              onChange={e => setInitialCapital(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[11px] text-zinc-200 font-mono"
-            />
-          </div>
-          <div>
-            <label className="text-[9px] font-bold text-zinc-500 block mb-1">Commission</label>
-            <div className="relative">
-              <input
-                type="number"
-                value={commission}
-                onChange={e => setCommission(e.target.value)}
-                step="0.01"
-                className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[11px] text-zinc-200 font-mono pr-5"
-              />
-              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">%</span>
-            </div>
-          </div>
-          <div>
-            <label className="text-[9px] font-bold text-zinc-500 block mb-1">Slippage</label>
-            <div className="relative">
-              <input
-                type="number"
-                value={slippage}
-                onChange={e => setSlippage(e.target.value)}
-                step="0.001"
-                className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-[11px] text-zinc-200 font-mono pr-5"
-              />
-              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">%</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3">
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Visual Mode</h4>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={visualMode}
-              onChange={e => setVisualMode(e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-8 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600" />
-          </label>
-        </div>
-        {visualMode && (
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-zinc-500">Speed:</span>
-            <div className="flex gap-1">
-              {SPEED_PRESETS.map(s => (
-                <button
-                  key={s}
-                  onClick={() => setVisualSpeed(s)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all ${
-                    visualSpeed === s
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-zinc-200'
-                  }`}
-                >
-                  {s}x
-                </button>
+      {/* Two-column grid for Testing Mode + Parameters */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+          <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-3">Testing Mode</h4>
+          <div className="relative">
+            <select
+              value={testingMode}
+              onChange={e => setTestingMode(e.target.value as TestingMode)}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-xs text-zinc-200 font-mono appearance-none cursor-pointer"
+            >
+              {testingModeOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label} — {opt.desc}</option>
               ))}
+            </select>
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
             </div>
           </div>
-        )}
+        </div>
+
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+          <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-3">Parameters</h4>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-zinc-500 block mb-1.5">Initial Balance</label>
+              <input
+                type="number"
+                value={initialCapital}
+                onChange={e => setInitialCapital(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-zinc-500 block mb-1.5">Commission</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={commission}
+                  onChange={e => setCommission(e.target.value)}
+                  step="0.01"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 font-mono pr-6"
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">%</span>
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-zinc-500 block mb-1.5">Slippage</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={slippage}
+                  onChange={e => setSlippage(e.target.value)}
+                  step="0.001"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 font-mono pr-6"
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">%</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <button
-        onClick={handleRun}
-        disabled={running}
-        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-xs font-bold text-white transition-all shadow-lg shadow-blue-500/20"
-      >
-        {running ? (
-          <Loader2 size={14} className="animate-spin" />
-        ) : (
-          <Play size={14} fill="currentColor" />
-        )}
-        {running ? 'Running Backtest...' : 'Run Backtest'}
-      </button>
+      {/* Two-column grid for Visual Mode + Run */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Visual Mode</h4>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={visualMode}
+                onChange={e => setVisualMode(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
+            </label>
+          </div>
+          {visualMode && (
+            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-zinc-800">
+              <span className="text-[10px] text-zinc-500 shrink-0">Speed:</span>
+              <div className="flex gap-1">
+                {SPEED_PRESETS.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setVisualSpeed(s)}
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-bold transition-all ${
+                      visualSpeed === s
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-end">
+          <button
+            onClick={handleRun}
+            disabled={running}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-bold text-white transition-all shadow-lg shadow-blue-500/20"
+          >
+            {running ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : (
+              <Play size={15} fill="currentColor" />
+            )}
+            {running ? 'Running Backtest...' : 'Run Backtest'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

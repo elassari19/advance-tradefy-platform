@@ -91,6 +91,9 @@ export function App() {
   const [backtestTotalCandles, setBacktestTotalCandles] = useState(0);
   const [backtestCursorTime, setBacktestCursorTime] = useState<number | undefined>(undefined);
   const backtestWsRef = useRef<WebSocket | null>(null);
+  const backtestContainerRef = useRef<HTMLDivElement>(null);
+  const [backtestSplitRatio, setBacktestSplitRatio] = useState(0.45);
+  const isDragging = useRef(false);
 
   // ── Alert State ──
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
@@ -198,6 +201,43 @@ export function App() {
     if (!window.electronAPI && 'Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
+  }, []);
+
+  // Resize handler for backtest split panes
+  useEffect(() => {
+    let rafId: number | null = null;
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const container = backtestContainerRef.current;
+        if (!container) return;
+        const rect = container.getBoundingClientRect();
+        let ratio = (e.clientY - rect.top) / rect.height;
+        ratio = Math.max(0.2, Math.min(0.7, ratio));
+        setBacktestSplitRatio(ratio);
+      });
+    };
+
+    const onMouseUp = () => {
+      isDragging.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
   }, []);
 
   const currentStrategyCode = strategyCodes[activeSymbol] ?? DEFAULT_STRATEGY_CODE;
@@ -666,55 +706,108 @@ export function App() {
       )}
 
       {view === 'backtest' && (
-        <div className="h-[calc(100vh-56px)] flex flex-col overflow-hidden">
-          {/* Tab Bar */}
-          <div className="flex items-center border-b border-zinc-800 bg-[#09090b] shrink-0 overflow-x-auto">
-            {[
-              { id: 'settings', label: 'Settings', icon: Settings },
-              { id: 'results', label: 'Results', icon: BarChartHorizontal },
-              { id: 'graph', label: 'Graph', icon: BarChart3 },
-              { id: 'report', label: 'Report', icon: FileText },
-              { id: 'journal', label: 'Journal', icon: ListTodo },
-            ].map(tab => {
-              const isActive = activeTesterTab === tab.id;
-              const showTab = tab.id === 'settings' || tab.id === 'journal' || (backtestResult && tab.id !== 'settings');
-              if (!showTab) return null;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTesterTab(tab.id)}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-r border-zinc-800 transition-colors whitespace-nowrap ${
-                    isActive
-                      ? 'bg-zinc-900 text-white border-b-2 border-b-blue-500'
-                      : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
-                  }`}
-                >
-                  <tab.icon size={14} />
-                  {tab.label}
-                </button>
-              );
-            })}
+        <div ref={backtestContainerRef} className="h-[calc(100vh-56px)] flex flex-col overflow-hidden bg-[#09090b]">
+          {/* Top section: Chart (always visible, resizable) */}
+          <div
+            className="shrink-0 overflow-hidden flex flex-col"
+            style={{ height: `${backtestSplitRatio * 100}%` }}
+          >
+            {(liveBacktestRunning || liveBacktestPaused) && visualBacktestAllCandles.length > 0 ? (
+              <div className="flex-1 min-h-0">
+                <VisualBacktestChart
+                  allCandles={visualBacktestAllCandles}
+                  currentBarIndex={currentBarIndex}
+                  trades={backtestTradesState}
+                  cursorTime={backtestCursorTime}
+                  symbol={lastBacktestSymbol || activeSymbol.replace('/', '')}
+                />
+              </div>
+            ) : backtestResult ? (
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 pb-2">
+                <TesterGraph result={backtestResult} />
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full text-zinc-600 text-xs">
+                Run a backtest to see the performance chart
+              </div>
+            )}
           </div>
 
-          {/* Main Content */}
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 bg-[#09090b]">
-            {/* Visual mode chart */}
-            {(liveBacktestRunning || liveBacktestPaused) && visualBacktestAllCandles.length > 0 ? (
-              <div className="h-full flex flex-col">
-                <div className="flex-1 min-h-0">
-                  <VisualBacktestChart
-                    allCandles={visualBacktestAllCandles}
-                    currentBarIndex={currentBarIndex}
-                    trades={backtestTradesState}
-                    cursorTime={backtestCursorTime}
-                    symbol={lastBacktestSymbol || activeSymbol.replace('/', '')}
-                  />
-                </div>
-              </div>
-            ) : null}
+          {/* Drag handle */}
+          <div
+            className="shrink-0 h-2 cursor-row-resize bg-transparent hover:bg-blue-500/20 active:bg-blue-500/30 relative flex items-center justify-center transition-colors group z-10"
+            onMouseDown={() => {
+              isDragging.current = true;
+              document.body.style.cursor = 'row-resize';
+              document.body.style.userSelect = 'none';
+            }}
+          >
+            <div className="w-8 h-0.5 rounded-full bg-zinc-700 group-hover:bg-blue-400 transition-colors" />
+          </div>
 
-            {/* Tab content (hidden when visual mode chart is showing) */}
-            {!(liveBacktestRunning || liveBacktestPaused) && (
+          {/* Bottom section: toolbar + tabs + content */}
+          <div className="flex-1 min-h-0 flex flex-col">
+            {/* Visual mode toolbar (below chart during live playback) */}
+            {liveBacktestRunning && (
+              <div className="shrink-0 px-4 py-2 border-b border-zinc-800">
+                <TesterToolbar
+                  running={liveBacktestRunning}
+                  paused={liveBacktestPaused}
+                  progress={liveBacktestProgress}
+                  currentBar={currentBarIndex}
+                  totalBars={backtestTotalCandles || visualBacktestAllCandles.length}
+                  currentTime={backtestCursorTime ? new Date(backtestCursorTime * 1000).toISOString().slice(0, 16).replace('T', ' ') : undefined}
+                  speed={backtestSpeed}
+                  onPlay={() => {
+                    if (liveBacktestPaused) {
+                      backtestWsRef.current?.send(JSON.stringify({ type: 'continue' }));
+                      setLiveBacktestPaused(false);
+                    } else if (!liveBacktestRunning) {
+                      // Re-run logic
+                    }
+                  }}
+                  onPause={() => backtestWsRef.current?.send(JSON.stringify({ type: 'pause' }))}
+                  onStop={() => backtestWsRef.current?.send(JSON.stringify({ type: 'stop' }))}
+                  onStepBack={() => backtestWsRef.current?.send(JSON.stringify({ type: 'step', direction: -1 }))}
+                  onStepForward={() => backtestWsRef.current?.send(JSON.stringify({ type: 'step', direction: 1 }))}
+                  onSpeedChange={(s) => {
+                    setBacktestSpeed(s);
+                    backtestWsRef.current?.send(JSON.stringify({ type: 'speed', speed: s }));
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Tab Bar (below chart) */}
+            <div className="flex items-center border-b border-zinc-800 bg-[#09090b] shrink-0 overflow-x-auto">
+              {[
+                { id: 'settings', label: 'Settings', icon: Settings },
+                { id: 'results', label: 'Results', icon: BarChartHorizontal },
+                { id: 'report', label: 'Report', icon: FileText },
+                { id: 'journal', label: 'Journal', icon: ListTodo },
+              ].map(tab => {
+                const isActive = activeTesterTab === tab.id;
+                const showTab = tab.id === 'settings' || tab.id === 'journal' || (backtestResult && tab.id !== 'settings');
+                if (!showTab) return null;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTesterTab(tab.id)}
+                    className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-r border-zinc-800 transition-colors whitespace-nowrap ${
+                      isActive
+                        ? 'bg-zinc-900 text-white border-b-2 border-b-blue-500'
+                        : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
+                    }`}
+                  >
+                    <tab.icon size={14} />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Tab Content (below tab bar) */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-4">
               <AnimatePresence mode="wait">
                 <motion.div
                   key={activeTesterTab}
@@ -724,21 +817,16 @@ export function App() {
                   transition={{ duration: 0.15 }}
                   className="h-full"
                 >
-                  {activeTesterTab === 'settings' && (
-                    <div className="max-w-lg mx-auto">
-                      <TesterSettings
-                        strategyCode={currentStrategyCode}
-                        onRun={handleBacktestRun}
-                        running={backtestRunning || liveBacktestRunning}
-                        onLoadStrategy={handleLoadStrategy}
-                      />
-                    </div>
-                  )}
+                {activeTesterTab === 'settings' && (
+                  <TesterSettings
+                    strategyCode={currentStrategyCode}
+                    onRun={handleBacktestRun}
+                    running={backtestRunning || liveBacktestRunning}
+                    onLoadStrategy={handleLoadStrategy}
+                  />
+                )}
                   {activeTesterTab === 'results' && backtestResult && (
                     <TesterResults result={backtestResult} />
-                  )}
-                  {activeTesterTab === 'graph' && backtestResult && (
-                    <TesterGraph result={backtestResult} />
                   )}
                   {activeTesterTab === 'report' && backtestResult && (
                     <TesterReport result={backtestResult} />
@@ -750,48 +838,17 @@ export function App() {
                   )}
                 </motion.div>
               </AnimatePresence>
+            </div>
+
+            {/* Prep data status */}
+            {prepDataStatus && !liveBacktestRunning && (
+              <div className="shrink-0 px-4 py-2 border-t border-zinc-800">
+                <div className="bg-zinc-900/80 border border-zinc-800 rounded-lg px-3 py-2 text-[10px] text-zinc-400">
+                  {prepDataStatus}
+                </div>
+              </div>
             )}
           </div>
-
-          {/* Visual mode toolbar */}
-          {liveBacktestRunning && (
-            <div className="shrink-0 px-4 pb-4 pt-2">
-              <TesterToolbar
-                running={liveBacktestRunning}
-                paused={liveBacktestPaused}
-                progress={liveBacktestProgress}
-                currentBar={currentBarIndex}
-                totalBars={backtestTotalCandles || visualBacktestAllCandles.length}
-                currentTime={backtestCursorTime ? new Date(backtestCursorTime * 1000).toISOString().slice(0, 16).replace('T', ' ') : undefined}
-                speed={backtestSpeed}
-                onPlay={() => {
-                  if (liveBacktestPaused) {
-                    backtestWsRef.current?.send(JSON.stringify({ type: 'continue' }));
-                    setLiveBacktestPaused(false);
-                  } else if (!liveBacktestRunning) {
-                    // Re-run logic
-                  }
-                }}
-                onPause={() => backtestWsRef.current?.send(JSON.stringify({ type: 'pause' }))}
-                onStop={() => backtestWsRef.current?.send(JSON.stringify({ type: 'stop' }))}
-                onStepBack={() => backtestWsRef.current?.send(JSON.stringify({ type: 'step', direction: -1 }))}
-                onStepForward={() => backtestWsRef.current?.send(JSON.stringify({ type: 'step', direction: 1 }))}
-                onSpeedChange={(s) => {
-                  setBacktestSpeed(s);
-                  backtestWsRef.current?.send(JSON.stringify({ type: 'speed', speed: s }));
-                }}
-              />
-            </div>
-          )}
-
-          {/* Prep data status */}
-          {prepDataStatus && !liveBacktestRunning && (
-            <div className="shrink-0 px-4 pb-2">
-              <div className="bg-zinc-900/80 border border-zinc-800 rounded-lg px-3 py-2 text-[10px] text-zinc-400">
-                {prepDataStatus}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
