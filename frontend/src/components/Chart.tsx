@@ -188,8 +188,8 @@ const DrawingsLayer: React.FC<DrawingsLayerProps> = ({
         const midX = (leftX + rightX) / 2;
 
         const rectStyle: React.CSSProperties = {
-          top: topY, height: Math.abs(y2 - y1),
-          border: `${bw}px dashed ${d.color}`,
+          top: topY, height: Math.max(Math.abs(y2 - y1), 2),
+          border: `${bw}px solid ${d.color}`,
           background: d.fillColor ?? 'transparent',
           pointerEvents: pe,
           cursor: isInteractable ? 'pointer' : 'crosshair',

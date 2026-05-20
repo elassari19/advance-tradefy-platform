@@ -27,7 +27,7 @@ def on_tick(price, candles):
 
 const DEFAULT_CODE_JS = `// Multi-Zone Breakout Detection
 const minZoneLength = 3;
-const tightPct = 0.003;
+const tightPct = 0.005;
 
 function bodyMid(idx) {
   const lo = Math.min(api.open[idx], api.close[idx]);
@@ -156,11 +156,7 @@ export const StrategyPanel: React.FC<StrategyPanelProps> = ({ symbol, code, isAc
     const prev = prevLangRef.current;
     prevLangRef.current = editorLang;
     if (prev === editorLang) return;
-    if (code === DEFAULT_CODE_PYTHON && editorLang === 'javascript') {
-      onCodeChange(DEFAULT_CODE_JS);
-    } else if (code === DEFAULT_CODE_JS && editorLang === 'python') {
-      onCodeChange(DEFAULT_CODE_PYTHON);
-    }
+    onCodeChange(editorLang === 'javascript' ? DEFAULT_CODE_JS : DEFAULT_CODE_PYTHON);
   }, [editorLang]);
 
   const handleEditorMount = useCallback((editor: any, monaco: any) => {
