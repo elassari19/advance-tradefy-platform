@@ -1278,7 +1278,7 @@ function TabChart({
   clientStrategyCode?: string | null;
 }) {
   const { candles, isInitializing } = useMarketDataForSymbol(symbol, timeframe);
-  const strategyDrawings = useLiveStrategy(clientStrategyCode || null, candles);
+  const { drawings: strategyDrawings, plotSeries: strategyPlotSeries, markers: strategyMarkers } = useLiveStrategy(clientStrategyCode || null, candles);
   const mergedDrawings = useMemo(() => {
     if (strategyDrawings.length === 0) return drawings || [];
     const strategyIds = new Set(strategyDrawings.map(d => d.id));
@@ -1312,6 +1312,8 @@ function TabChart({
       drawingTool={drawingTool}
       drawings={mergedDrawings}
       onDrawingsChange={onDrawingsChange}
+      strategyPlotSeries={strategyPlotSeries}
+      strategyMarkers={strategyMarkers}
     />
   );
 }

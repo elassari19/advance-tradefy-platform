@@ -262,10 +262,10 @@ export const VisualBacktestChart: React.FC<VisualBacktestChartProps> = ({
     const chart = chartRef.current;
     const visibleRange = chart.timeScale().getVisibleRange();
     if (visibleRange) {
-      const range = visibleRange.to - visibleRange.from;
+      const range = (visibleRange.to as number) - (visibleRange.from as number);
       chart.timeScale().setVisibleRange({
-        from: (cursorTime as number) - range * 0.6,
-        to: (cursorTime as number) + range * 0.4,
+        from: ((cursorTime as number) - range * 0.6) as Time,
+        to: ((cursorTime as number) + range * 0.4) as Time,
       });
     }
   }, [cursorTime]);

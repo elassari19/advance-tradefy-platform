@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import { createChart, ColorType, AreaSeries, LineSeries, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
-import type { IChartApi, ISeriesApi, IPriceLine, ISeriesPrimitive, Time } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, IPriceLine, Time } from 'lightweight-charts';
 import type { Candle } from '../hooks/useMarketData';
 import type { Position } from '../hooks/useSimulator';
 import type { IndicatorConfig } from '../utils/indicators';
@@ -16,15 +16,20 @@ interface DrawingPoint {
   price: number;
 }
 
+export type ShapeStyle = 'circle' | 'square' | 'diamond' | 'cross' | 'xcross' | 'triangle-up' | 'triangle-down' | 'arrow-up' | 'arrow-down';
+
 export interface Drawing {
   id: string;
-  type: 'trend-line' | 'horizontal-line' | 'rectangle' | 'metrics';
+  type: 'trend-line' | 'horizontal-line' | 'rectangle' | 'metrics' | 'arrow-up' | 'arrow-down' | 'shape' | 'label';
   points: DrawingPoint[];
   color: string;
   borderWidth?: number;
   fillColor?: string;
   extendLeft?: boolean;
   extendRight?: boolean;
+  shapeStyle?: ShapeStyle;
+  text?: string;
+  size?: number;
   metrics?: {
     barCount: number;
     priceChange: number;
@@ -33,11 +38,18 @@ export interface Drawing {
   };
 }
 
-interface BacktestTradeMarker {
+export interface StrategyPlotSeries {
+  id: string;
+  title: string;
+  color: string;
+  data: { time: number; value: number }[];
+}
+
+export interface StrategyMarker {
   time: number;
-  type: 'buy' | 'sell' | 'tp' | 'sl';
+  type: 'buy' | 'sell';
   price: number;
-  label: string;
+  text?: string;
 }
 
 interface ChartProps {
@@ -52,6 +64,8 @@ interface ChartProps {
   drawingTool?: DrawingTool;
   drawings?: Drawing[];
   onDrawingsChange?: (drawings: Drawing[]) => void;
+  strategyPlotSeries?: StrategyPlotSeries[];
+  strategyMarkers?: StrategyMarker[];
 }
 
 const SUB_CHART_HEIGHT = 130;
@@ -115,7 +129,7 @@ const DrawingsLayer: React.FC<DrawingsLayerProps> = ({
   for (const d of drawings) {
     const sel = selectedDrawingId === d.id ? `rgba(255,255,255,0.3)` : 'transparent';
 
-      if (d.type === 'horizontal-line') {
+    if (d.type === 'horizontal-line') {
       const bw = d.borderWidth ?? 1.5;
       const y = series.priceToCoordinate(d.points[0].price);
       if (y === null) continue;
@@ -127,13 +141,11 @@ const DrawingsLayer: React.FC<DrawingsLayerProps> = ({
           onContextMenu={e => { e.preventDefault(); onContextMenuDrawing(d.id, e); }}
         />
       );
-      // selection highlight
       if (sel !== 'transparent') {
         elements.push(
           <div key={`${d.id}-sel`} className="absolute left-0 right-0 pointer-events-none" style={{ top: y - 3, height: bw + 6, background: sel, borderRadius: 2 }} />
         );
       }
-      // anchor for adjustment (the only point)
       elements.push(anchorEl(d, '0', 0, y));
     }
 
@@ -219,7 +231,6 @@ const DrawingsLayer: React.FC<DrawingsLayerProps> = ({
             <div key={`${d.id}-sel`} className="absolute" style={selStyle} />
           );
         }
-        // 6 anchor points: 4 corners + 2 horizontal midpoints
         elements.push(anchorEl(d, 'tl', leftX, topY));
         elements.push(anchorEl(d, 'tr', rightX, topY));
         elements.push(anchorEl(d, 'bl', leftX, bottomY));
@@ -229,7 +240,6 @@ const DrawingsLayer: React.FC<DrawingsLayerProps> = ({
       }
 
       if (d.type === 'metrics') {
-        const bw = d.borderWidth ?? 1.5;
         const dx = x2 - x1;
         const dy = y2 - y1;
         const len = Math.sqrt(dx * dx + dy * dy);
@@ -255,6 +265,68 @@ const DrawingsLayer: React.FC<DrawingsLayerProps> = ({
             </div>
           );
         }
+      }
+    }
+
+    // ── Strategy shapes (inside for loop, outside narrowed type block) ──
+    if ((d.type === 'arrow-up' || d.type === 'arrow-down') && d.points.length >= 1) {
+      const x = chart.timeScale().timeToCoordinate(d.points[0].time as Time);
+      const y = series.priceToCoordinate(d.points[0].price);
+      if (x !== null && y !== null) {
+        const sz = d.size ?? 12;
+        const isUp = d.type === 'arrow-up';
+        elements.push(
+          <div key={d.id} className="absolute z-30" style={{ left: x - sz / 2, top: isUp ? y - sz : y, width: sz, height: sz, pointerEvents: 'none' }}>
+            <svg width={sz} height={sz} viewBox="0 0 12 12">
+              {isUp ? (
+                <polygon points="6,0 12,12 0,12" fill={d.color} />
+              ) : (
+                <polygon points="6,12 12,0 0,0" fill={d.color} />
+              )}
+            </svg>
+          </div>
+        );
+      }
+    }
+
+    // ── Strategy shapes: generic shape (circle, square, diamond, cross, etc.) ──
+    if (d.type === 'shape' && d.points.length >= 1) {
+      const x = chart.timeScale().timeToCoordinate(d.points[0].time as Time);
+      const y = series.priceToCoordinate(d.points[0].price);
+      if (x !== null && y !== null) {
+        const sz = d.size ?? 10;
+        const half = sz / 2;
+        const style = d.shapeStyle || 'circle';
+        elements.push(
+          <div key={d.id} className="absolute z-30" style={{ left: x - half, top: y - half, width: sz, height: sz, pointerEvents: 'none' }}>
+            <svg width={sz} height={sz} viewBox="0 0 12 12">
+              {style === 'circle' && <circle cx="6" cy="6" r="5" fill="none" stroke={d.color} strokeWidth="1.5" />}
+              {style === 'square' && <rect x="1" y="1" width="10" height="10" fill="none" stroke={d.color} strokeWidth="1.5" />}
+              {style === 'diamond' && <polygon points="6,0 12,6 6,12 0,6" fill="none" stroke={d.color} strokeWidth="1.5" />}
+              {style === 'cross' && <path d="M2,2 L10,10 M10,2 L2,10" stroke={d.color} strokeWidth="1.5" />}
+              {style === 'xcross' && <path d="M2,2 L10,10 M10,2 L2,10" stroke={d.color} strokeWidth="1.5" />}
+              {style === 'triangle-up' && <polygon points="6,1 11,11 1,11" fill="none" stroke={d.color} strokeWidth="1.5" />}
+              {style === 'triangle-down' && <polygon points="6,11 11,1 1,1" fill="none" stroke={d.color} strokeWidth="1.5" />}
+              {style === 'arrow-up' && <polygon points="6,0 12,12 0,12" fill={d.color} />}
+              {style === 'arrow-down' && <polygon points="6,12 12,0 0,0" fill={d.color} />}
+            </svg>
+          </div>
+        );
+      }
+    }
+
+    // ── Strategy shapes: label ──
+    if (d.type === 'label' && d.points.length >= 1) {
+      const x = chart.timeScale().timeToCoordinate(d.points[0].time as Time);
+      const y = series.priceToCoordinate(d.points[0].price);
+      if (x !== null && y !== null) {
+        elements.push(
+          <div key={d.id} className="absolute z-30 px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap pointer-events-none"
+            style={{ left: x + 4, top: y - 8, background: d.color + '30', color: d.color, border: `1px solid ${d.color}` }}
+          >
+            {d.text || ''}
+          </div>
+        );
       }
     }
   }
@@ -289,7 +361,7 @@ const DrawingsLayer: React.FC<DrawingsLayerProps> = ({
   return <>{elements}</>;
 };
 
-export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePosition, chartType, indicatorConfigs, backtestTrades, showBacktestOverlay, backtestCursorTime, drawingTool = 'pointer', drawings: externalDrawings, onDrawingsChange }) => {
+export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePosition, chartType, indicatorConfigs, backtestTrades, showBacktestOverlay, backtestCursorTime, drawingTool = 'pointer', drawings: externalDrawings, onDrawingsChange, strategyPlotSeries = [], strategyMarkers = [] }) => {
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const mainChartRef = useRef<IChartApi | null>(null);
   const areaSeriesRef = useRef<ISeriesApi<'Area'> | null>(null);
@@ -300,16 +372,16 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
   const positionsRef = useRef<Position[]>(positions);
   const activeSeriesRef = useRef<ISeriesApi<any> | null>(null);
   const indicatorSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  const strategySeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  const prevStrategyPlotIdsRef = useRef<string[]>([]);
   const prevMainLineIdsRef = useRef<string[]>([]);
   const isSyncingRef = useRef(false);
   const tradeMarkerPriceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
   const cursorRef = useRef<HTMLDivElement>(null);
-  const chartWrapperRef = useRef<HTMLDivElement>(null);
   const candlesRef = useRef<Candle[]>(candles);
 
   const [internalDrawings, setInternalDrawings] = useState<Drawing[]>([]);
   const [pendingPoints, setPendingPoints] = useState<DrawingPoint[]>([]);
-  const [overlayTick, setOverlayTick] = useState(0);
   const pendingRef = useRef<DrawingPoint[]>([]);
 
   const drawings = externalDrawings ?? internalDrawings;
@@ -685,10 +757,11 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
   }, []);
 
   // ─── Overlay re-render on chart scroll/zoom ──────────
+  const [, forceOverlayRerender] = useState(0);
   useEffect(() => {
     const chart = mainChartRef.current;
     if (!chart) return;
-    const handler = () => setOverlayTick(t => t + 1);
+    const handler = () => forceOverlayRerender(t => t + 1);
     chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
     return () => chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
   }, []);
@@ -950,6 +1023,63 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
     return () => { cancelled = true; };
   }, [indicatorConfigs, candles]);
 
+  // ─── Strategy plot series (rendered as LineSeries on main chart) ──
+  useEffect(() => {
+    const chart = mainChartRef.current;
+    if (!chart) return;
+
+    const plotIds = strategyPlotSeries.map(p => p.id);
+
+    for (const prevId of prevStrategyPlotIdsRef.current) {
+      if (!plotIds.includes(prevId)) {
+        const s = strategySeriesRef.current.get(prevId);
+        if (s) { chart.removeSeries(s); strategySeriesRef.current.delete(prevId); }
+      }
+    }
+
+    for (const plot of strategyPlotSeries) {
+      let s = strategySeriesRef.current.get(plot.id);
+      if (!s) {
+        s = chart.addSeries(LineSeries, {
+          color: plot.color,
+          lineWidth: 1,
+          lastValueVisible: true,
+          priceLineVisible: false,
+        });
+        strategySeriesRef.current.set(plot.id, s);
+      } else {
+        s.applyOptions({ color: plot.color });
+      }
+      const filtered = plot.data.filter(v => Number.isFinite(v.value));
+      if (filtered.length > 0) {
+        s.setData(filtered.map(v => ({ time: v.time as any, value: v.value })));
+      }
+    }
+
+    prevStrategyPlotIdsRef.current = plotIds;
+  }, [strategyPlotSeries]);
+
+  // ─── Strategy markers (buy/sell arrows on candles) ──
+  useEffect(() => {
+    const series = activeSeriesRef.current;
+    if (!series || strategyMarkers.length === 0) {
+      if (series) {
+        try { (series as any).setMarkers([]); } catch {}
+      }
+      return;
+    }
+
+    const markers = strategyMarkers.map(m => ({
+      time: m.time as any,
+      position: m.type === 'buy' ? 'belowBar' as const : 'aboveBar' as const,
+      shape: m.type === 'buy' ? 'arrowUp' as const : 'arrowDown' as const,
+      color: m.type === 'buy' ? '#22c55e' : '#ef4444',
+      text: m.text || '',
+    }));
+
+    try { (series as any).setMarkers(markers); } catch {}
+  }, [strategyMarkers]);
+
   // ─── Backtest Trade Markers ──────────────────────
   useEffect(() => {
     const series = activeSeriesRef.current;
@@ -1066,13 +1196,13 @@ export const Chart: React.FC<ChartProps> = ({ candles, positions, onUpdatePositi
     if (backtestCursorTime != null) {
       const visibleRange = chart.timeScale().getVisibleRange();
       if (visibleRange) {
-        const range = visibleRange.to - visibleRange.from;
+        const range = (visibleRange.to as number) - (visibleRange.from as number);
         chart.timeScale().setVisibleRange({
-          from: (backtestCursorTime as number) - range * 0.6,
-          to: (backtestCursorTime as number) + range * 0.4,
+          from: ((backtestCursorTime as number) - range * 0.6) as Time,
+          to: ((backtestCursorTime as number) + range * 0.4) as Time,
         });
       }
-      const x = chart.timeScale().timeToCoordinate(backtestCursorTime as number);
+      const x = chart.timeScale().timeToCoordinate(backtestCursorTime as Time);
       if (x != null && cursorRef.current) {
         cursorRef.current.style.left = x + 'px';
       }

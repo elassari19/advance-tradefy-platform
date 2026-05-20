@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { Play, CheckCircle, AlertCircle, Loader2, Trash2, Save, FolderOpen, Download, Upload, FileCode } from 'lucide-react';
 import '../../utils/monaco-setup';
@@ -30,50 +30,33 @@ const DEFAULT_CODE_JS = `// Tradefy JavaScript Strategy (Client-side)
 // Available via 'api' object:
 //   api.candles      - Array of candle objects
 //   api.open/high/low/close/volume/time - price arrays
+//   api.plot(series, title?, color?, style?)  - plot a line series on chart
+//   api.plotshape(series, title?, location?, style?, color?) - plot shapes (arrowup, arrowdown, circle, square, diamond, cross, etc.)
+//   api.hline(price, title?, color?)  - horizontal line
 //   api.drawRectangle(id, time1, price1, time2, price2, color, fill?)
 //   api.clearDrawings()
 //   api.state         - persistent object between calls
-//   api.buy(qty, sl?, tp?)
-//   api.sell(qty, sl?, tp?)
+//   api.buy(qty, sl?, tp?)  - adds buy arrow on chart
+//   api.sell(qty, sl?, tp?)  - adds sell arrow on chart
 
-// Detect tight consolidation zone and draw it
-const LOOKBACK = 12;
-const TIGHT_RATIO = 0.003;
-const close = api.close;
+// SMA Crossover Strategy Example
+const fast = ta.sma(api.close, 9);
+const slow = ta.sma(api.close, 21);
 
-if (close.length < LOOKBACK) return;
+// Plot moving averages on the chart
+api.plot(fast, 'Fast SMA', '#FFD700', 'line');
+api.plot(slow, 'Slow SMA', '#FF6B6B', 'line');
 
-const recent = close.slice(-LOOKBACK);
-const zoneHigh = Math.max(...recent);
-const zoneLow = Math.min(...recent);
-const zoneRange = zoneHigh - zoneLow;
-const avgPrice = recent.reduce((a, b) => a + b, 0) / recent.length;
+// Generate buy/sell signals on crossover
+const crossUp = ta.crossover(fast, slow);
+const crossDown = ta.crossunder(fast, slow);
 
-if (zoneRange > avgPrice * TIGHT_RATIO) {
-    api.state.zone = null;
-    api.clearDrawings();
-    return;
-}
+api.plotshape(crossUp, 'Buy', 'belowbar', 'arrowup', '#22c55e');
+api.plotshape(crossDown, 'Sell', 'abovebar', 'arrowdown', '#ef4444');
 
-const lastTime = api.time[api.time.length - 1];
-const firstTime = api.time[api.time.length - LOOKBACK];
-
-if (!api.state.zone) {
-    api.state.zone = { high: zoneHigh, low: zoneLow };
-}
-
-api.drawRectangle('zone', firstTime, zoneHigh, lastTime, zoneLow, '#888888', 'rgba(128,128,128,0.15)');
-
-const price = close[close.length - 1];
-if (price > zoneHigh && !api.state.broke) {
-    api.state.broke = true;
-    api.drawRectangle('zone', firstTime, zoneHigh, lastTime, zoneLow, '#ef4444', 'rgba(239,68,68,0.25)');
-} else if (price < zoneLow && !api.state.broke) {
-    api.state.broke = true;
-    api.drawRectangle('zone', firstTime, zoneHigh, lastTime, zoneLow, '#22c55e', 'rgba(34,197,94,0.25)');
-} else if (price <= zoneHigh && price >= zoneLow) {
-    api.state.broke = false;
-}
+// Place trades on latest bar
+if (crossUp[crossUp.length - 1]) api.buy(0.1);
+if (crossDown[crossDown.length - 1]) api.sell(0.1);
 `;
 
 const SUGGESTIONS = [
@@ -123,6 +106,18 @@ export const StrategyPanel: React.FC<StrategyPanelProps> = ({ symbol, code, isAc
     setMessage('');
     setMarkers([]);
   }, [symbol, editorLang]);
+
+  const prevLangRef = useRef(editorLang);
+  useEffect(() => {
+    const prev = prevLangRef.current;
+    prevLangRef.current = editorLang;
+    if (prev === editorLang) return;
+    if (code === DEFAULT_CODE_PYTHON && editorLang === 'javascript') {
+      onCodeChange(DEFAULT_CODE_JS);
+    } else if (code === DEFAULT_CODE_JS && editorLang === 'python') {
+      onCodeChange(DEFAULT_CODE_PYTHON);
+    }
+  }, [editorLang]);
 
   const handleEditorMount = useCallback((editor: any, monaco: any) => {
     monaco.languages.setMonarchTokensProvider('python', {
