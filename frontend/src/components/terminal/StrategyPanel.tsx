@@ -25,26 +25,74 @@ def on_tick(price, candles):
     #     buy(0.1, tp=70000, sl=60000)
 `;
 
-const DEFAULT_CODE_JS = `// Click "Add to Chart" above to run your strategy.
-//
-// API methods available inside the strategy:
-//   api.plot(series, title?, color?)     - line series
-//   api.plotshape(series, title?, location?, style?, color?)  - shapes
-//   api.hline(price, title?, color?)     - horizontal line
-//   api.buy(qty?, sl?, tp?), api.sell(qty?, sl?, tp?)  - trade signals
-//   api.drawRectangle(id, time1, price1, time2, price2, color, fill?)
-//   api.clearDrawings()
-//   api.state  - persists between ticks
-//   ta.sma(), ta.ema(), ta.rsi(), ta.crossover(), etc.
-//
-// Example: uncomment below for SMA crossover
-//
-// const fast = ta.sma(api.close, 9);
-// const slow = ta.sma(api.close, 21);
-// api.plot(fast, 'Fast SMA', '#FFD700');
-// api.plot(slow, 'Slow SMA', '#FF6B6B');
-// api.plotshape(ta.crossover(fast, slow), 'Buy', 'belowbar', 'arrowup', '#22c55e');
-// api.plotshape(ta.crossunder(fast, slow), 'Sell', 'abovebar', 'arrowdown', '#ef4444');
+const DEFAULT_CODE_JS = `// Multi-Zone Breakout Detection
+const minZoneLength = 3;
+const tightPct = 0.003;
+
+function bodyMid(idx) {
+  const lo = Math.min(api.open[idx], api.close[idx]);
+  const hi = Math.max(api.open[idx], api.close[idx]);
+  return (lo + hi) / 2;
+}
+
+// Scan all consolidation zones (non-overlapping)
+const zones = [];
+let i = 0;
+while (i < api.close.length) {
+  let j = i + 1;
+  const mids = [bodyMid(i)];
+  while (j < api.close.length) {
+    const avg = mids.reduce((a, b) => a + b, 0) / mids.length;
+    const m = bodyMid(j);
+    if (avg !== 0 && Math.abs(m - avg) / Math.abs(avg) <= tightPct) {
+      mids.push(m);
+      j++;
+    } else break;
+  }
+  if (j - i >= minZoneLength) {
+    zones.push({
+      startIdx: i,
+      endIdx: j - 1,
+      high: Math.max(...api.high.slice(i, j)),
+      low: Math.min(...api.low.slice(i, j)),
+    });
+  }
+  i = j;
+}
+
+// Draw each zone as a rectangle colored by current breakout status
+const last = api.close.length - 1;
+for (const z of zones) {
+  const startTime = api.time[z.startIdx];
+  const endTime = api.time[z.endIdx];
+
+  let color = '#888888';
+  let fill = 'rgba(128,128,128,0.15)';
+
+  if (api.close[last] > z.high) {
+    color = '#ef4444';
+    fill = 'rgba(239,68,68,0.2)';
+  } else if (api.close[last] < z.low) {
+    color = '#22c55e';
+    fill = 'rgba(34,197,94,0.2)';
+  }
+
+  api.drawRectangle('zone-' + z.startIdx, startTime, z.high, endTime, z.low, color, fill);
+}
+
+// Buy/sell signals on latest breakout
+if (zones.length > 0) {
+  const z = zones[zones.length - 1];
+  if (api.close[last] > z.high) {
+    const sig = new Array(api.close.length).fill(false);
+    sig[last] = true;
+    api.plotshape(sig, 'Up Breakout', 'belowbar', 'arrowup', '#ef4444');
+  } else if (api.close[last] < z.low) {
+    const sig = new Array(api.close.length).fill(false);
+    sig[last] = true;
+    api.plotshape(sig, 'Down Breakout', 'abovebar', 'arrowdown', '#22c55e');
+  }
+}
 `;
 
 const SUGGESTIONS = [

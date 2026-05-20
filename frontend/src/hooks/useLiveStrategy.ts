@@ -164,7 +164,7 @@ export function useLiveStrategy(code: string | null, candles: Candle[]): Strateg
         });
       },
       drawRectangle: (id, x1Time, y1Price, x2Time, y2Price, color, fillColor) => {
-        addDrawing({
+        collectedDrawings.push({
           id,
           type: 'rectangle',
           points: [{ time: x1Time, price: y1Price }, { time: x2Time, price: y2Price }],
