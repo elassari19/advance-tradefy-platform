@@ -25,45 +25,26 @@ def on_tick(price, candles):
     #     buy(0.1, tp=70000, sl=60000)
 `;
 
-const DEFAULT_CODE_JS = `// Tradefy JavaScript Strategy (Client-side)
+const DEFAULT_CODE_JS = `// Click "Add to Chart" above to run your strategy.
 //
-// Available via 'api' object:
-//   api.candles      - Array of candle objects
-//   api.open/high/low/close/volume/time - price arrays
-//   api.plot(series, title?, color?, style?)  - plot a line series on chart
-//   api.plotshape(series, title?, location?, style?, color?) - plot shapes (arrowup, arrowdown, circle, square, diamond, cross, etc.)
-//   api.hline(price, title?, color?)  - horizontal line
+// API methods available inside the strategy:
+//   api.plot(series, title?, color?)     - line series
+//   api.plotshape(series, title?, location?, style?, color?)  - shapes
+//   api.hline(price, title?, color?)     - horizontal line
+//   api.buy(qty?, sl?, tp?), api.sell(qty?, sl?, tp?)  - trade signals
 //   api.drawRectangle(id, time1, price1, time2, price2, color, fill?)
 //   api.clearDrawings()
-//   api.state         - persistent object between calls
-//   api.buy(qty, sl?, tp?)  - adds buy arrow on chart
-//   api.sell(qty, sl?, tp?)  - adds sell arrow on chart
-
-// Zone Breakout Detection Strategy
-const zonePeriod = 8;
-const tightRangePct = 0.003;
-
-const recentCandles = api.close.slice(-zonePeriod - 1, -1);
-const zoneHigh = Math.max(...recentCandles);
-const zoneLow = Math.min(...recentCandles);
-const zoneRange = zoneHigh - zoneLow;
-const avgPrice = recentCandles.reduce((a, b) => a + b, 0) / recentCandles.length;
-
-api.hline(zoneHigh, 'Zone High', '#FFD700');
-api.hline(zoneLow, 'Zone Low', '#FFD700');
-
-if (zoneRange < avgPrice * tightRangePct) {
-  const breakAbove = api.close[api.close.length - 1] > zoneHigh;
-  const breakBelow = api.close[api.close.length - 1] < zoneLow;
-
-  if (breakAbove) {
-    api.plotshape([breakAbove], 'Buy Signal', 'belowbar', 'arrowup', '#22c55e');
-    api.buy(0.1);
-  } else if (breakBelow) {
-    api.plotshape([breakBelow], 'Sell Signal', 'abovebar', 'arrowdown', '#ef4444');
-    api.sell(0.1);
-  }
-}
+//   api.state  - persists between ticks
+//   ta.sma(), ta.ema(), ta.rsi(), ta.crossover(), etc.
+//
+// Example: uncomment below for SMA crossover
+//
+// const fast = ta.sma(api.close, 9);
+// const slow = ta.sma(api.close, 21);
+// api.plot(fast, 'Fast SMA', '#FFD700');
+// api.plot(slow, 'Slow SMA', '#FF6B6B');
+// api.plotshape(ta.crossover(fast, slow), 'Buy', 'belowbar', 'arrowup', '#22c55e');
+// api.plotshape(ta.crossunder(fast, slow), 'Sell', 'abovebar', 'arrowdown', '#ef4444');
 `;
 
 const SUGGESTIONS = [
