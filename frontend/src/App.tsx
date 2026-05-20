@@ -4,6 +4,7 @@ import { X, Plus, ChevronDown, BarChart3, FlaskConical, AlertTriangle, Loader2, 
 import { useMarketDataForSymbol } from "./hooks/useMarketData";
 import { useSimulator } from "./hooks/useSimulator";
 import { useBacktest } from "./hooks/useBacktest";
+import { useLiveStrategy } from "./hooks/useLiveStrategy";
 import { Chart, type Drawing } from "./components/Chart";
 import { OrderPanel } from "./components/order/OrderPanel";
 import { TerminalTabs } from "./components/terminal/TerminalTabs";
@@ -107,6 +108,7 @@ export function App() {
 
   const [strategyCodes, setStrategyCodes] = useState<Record<string, string>>({});
   const [activeStrategySymbols, setActiveStrategySymbols] = useState<string[]>([]);
+  const [clientStrategyCode, setClientStrategyCode] = useState<string | null>(null);
   const [indicatorConfigs, setIndicatorConfigs] = useState<Record<string, IndicatorConfig[]>>({});
   const [customIndicatorDefs, setCustomIndicatorDefs] = useState<CustomIndicatorDef[]>(() => {
     try {
@@ -446,10 +448,15 @@ export function App() {
     setStrategyCodes(prev => ({ ...prev, [activeSymbol]: code }));
   }, [activeSymbol]);
 
-  const handleDeployStrategy = useCallback(async (symbol: string, code: string) => {
+  const handleDeployStrategy = useCallback(async (symbol: string, code: string, language?: string) => {
     const rawSymbol = symbol.replace('/', '');
-    await deployStrategy(rawSymbol, code);
-    setActiveStrategySymbols(prev => prev.includes(rawSymbol) ? prev : [...prev, rawSymbol]);
+    if (language === 'javascript') {
+      setClientStrategyCode(code);
+      setActiveStrategySymbols(prev => prev.includes(rawSymbol) ? prev : [...prev, rawSymbol]);
+    } else {
+      await deployStrategy(rawSymbol, code);
+      setActiveStrategySymbols(prev => prev.includes(rawSymbol) ? prev : [...prev, rawSymbol]);
+    }
   }, [deployStrategy]);
 
   // Keyboard shortcuts
@@ -474,9 +481,13 @@ export function App() {
 
   const handleRemoveStrategy = useCallback(async (symbol: string) => {
     const rawSymbol = symbol.replace('/', '');
-    await removeStrategy(rawSymbol);
+    if (clientStrategyCode) {
+      setClientStrategyCode(null);
+    } else {
+      await removeStrategy(rawSymbol);
+    }
     setActiveStrategySymbols(prev => prev.filter(s => s !== rawSymbol));
-  }, [removeStrategy]);
+  }, [removeStrategy, clientStrategyCode]);
 
   const handleToggleIndicator = useCallback((config: IndicatorConfig) => {
     setIndicatorConfigs(prev => {
@@ -910,6 +921,7 @@ export function App() {
                     drawingTool={drawingTool}
                     drawings={drawings}
                     onDrawingsChange={setDrawings}
+                    clientStrategyCode={clientStrategyCode}
                   />
                 </div>
 
@@ -1249,6 +1261,7 @@ function TabChart({
   drawingTool,
   drawings,
   onDrawingsChange,
+  clientStrategyCode,
 }: {
   symbol: string;
   timeframe: number;
@@ -1262,8 +1275,18 @@ function TabChart({
   drawingTool?: DrawingTool;
   drawings?: Drawing[];
   onDrawingsChange?: (drawings: Drawing[]) => void;
+  clientStrategyCode?: string | null;
 }) {
   const { candles, isInitializing } = useMarketDataForSymbol(symbol, timeframe);
+  const strategyDrawings = useLiveStrategy(clientStrategyCode || null, candles);
+  const mergedDrawings = useMemo(() => {
+    if (strategyDrawings.length === 0) return drawings || [];
+    const strategyIds = new Set(strategyDrawings.map(d => d.id));
+    return [
+      ...(drawings || []).filter(d => !strategyIds.has(d.id)),
+      ...strategyDrawings,
+    ];
+  }, [drawings, strategyDrawings]);
 
   if (isInitializing) {
     return (
@@ -1287,7 +1310,7 @@ function TabChart({
       showBacktestOverlay={showBacktestOverlay}
       backtestCursorTime={backtestCursorTime}
       drawingTool={drawingTool}
-      drawings={drawings}
+      drawings={mergedDrawings}
       onDrawingsChange={onDrawingsChange}
     />
   );

@@ -144,6 +144,7 @@ pub struct ExecutionStats {
 pub struct PythonRuntime {
     pending_signal: Arc<Mutex<Option<PythonSignal>>>,
     price_history: Arc<Mutex<Vec<f64>>>,
+    candle_history: Arc<Mutex<Vec<Candle>>>,
     time_series: Arc<Mutex<TimeSeries>>,
     pending_plots: Arc<Mutex<PlotOutput>>,
     position_size: Arc<Mutex<f64>>,
@@ -157,6 +158,7 @@ impl PythonRuntime {
         Self {
             pending_signal: Arc::new(Mutex::new(None)),
             price_history: Arc::new(Mutex::new(Vec::with_capacity(MAX_CANDLES))),
+            candle_history: Arc::new(Mutex::new(Vec::with_capacity(MAX_CANDLES))),
             time_series: Arc::new(Mutex::new(TimeSeries::with_max_len(MAX_CANDLES))),
             pending_plots: Arc::new(Mutex::new(PlotOutput { plots: vec![], hlines: vec![] })),
             position_size: Arc::new(Mutex::new(0.0)),
@@ -269,6 +271,22 @@ impl PythonRuntime {
         output.hlines = hlines;
     }
 
+    pub fn seed_history(&self, prices: Vec<f64>) {
+        let mut history = self.price_history.lock().unwrap();
+        let start = prices.len().saturating_sub(MAX_CANDLES);
+        for p in prices.iter().skip(start) {
+            history.push(*p);
+        }
+    }
+
+    pub fn seed_ohlc_history(&self, candles: Vec<Candle>) {
+        let mut history = self.candle_history.lock().unwrap();
+        let start = candles.len().saturating_sub(MAX_CANDLES);
+        for c in candles.iter().skip(start) {
+            history.push(c.clone());
+        }
+    }
+
     pub fn execute_strategy(&self, code: &str, price: f64) -> Result<(), String> {
         {
             let mut history = self.price_history.lock().map_err(|_| "Lock error")?;
@@ -296,6 +314,19 @@ impl PythonRuntime {
                 PyList::new(py, &arr)
             };
             globals.set_item("candles", candles).map_err(|e| e.to_string())?;
+
+            {
+                let ch = self.candle_history.lock().map_err(|_| "Lock error")?;
+                let opens: Vec<f64> = ch.iter().map(|c| c.open).collect();
+                let highs: Vec<f64> = ch.iter().map(|c| c.high).collect();
+                let lows: Vec<f64> = ch.iter().map(|c| c.low).collect();
+                let closes: Vec<f64> = ch.iter().map(|c| c.close).collect();
+                drop(ch);
+                globals.set_item("_ohlc_opens", PyList::new(py, &opens)).map_err(|e| e.to_string())?;
+                globals.set_item("_ohlc_highs", PyList::new(py, &highs)).map_err(|e| e.to_string())?;
+                globals.set_item("_ohlc_lows", PyList::new(py, &lows)).map_err(|e| e.to_string())?;
+                globals.set_item("_ohlc_closes", PyList::new(py, &closes)).map_err(|e| e.to_string())?;
+            }
 
             let code_with_globals = format!(
                 r#"

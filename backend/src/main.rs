@@ -539,7 +539,22 @@ async fn deploy_strategy(
     if symbol.is_empty() {
         return (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "symbol is required" })));
     }
-    match state.strategy.deploy(symbol, code.to_string()) {
+
+    let normalized = StrategyEngine::normalize_symbol(&symbol);
+    let (history, ohlc_history) = {
+        let aggregators = state.aggregators.lock().unwrap();
+        let key = (normalized.clone(), 5u32);
+        match aggregators.get(&key) {
+            Some(agg) => {
+                let candles: Vec<Candle> = agg.get_history().iter().map(|c| (*c).clone()).collect();
+                let closes: Vec<f64> = candles.iter().map(|c| c.close).collect();
+                (closes, candles)
+            }
+            None => (vec![], vec![]),
+        }
+    };
+
+    match state.strategy.deploy(symbol, code.to_string(), history, ohlc_history) {
         Ok(_) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "success" }))),
         Err(e) => {
             tracing::error!("Strategy deploy error: {}", e);

@@ -8,7 +8,7 @@ interface StrategyPanelProps {
   code: string;
   isActive: boolean;
   onCodeChange: (code: string) => void;
-  onDeploy: (symbol: string, code: string) => Promise<void>;
+  onDeploy: (symbol: string, code: string, language?: string) => Promise<void>;
   onRemove: (symbol: string) => Promise<void>;
   onSave?: (name: string, code: string) => Promise<void>;
   onLoad?: () => void;
@@ -25,20 +25,55 @@ def on_tick(price, candles):
     #     buy(0.1, tp=70000, sl=60000)
 `;
 
-const DEFAULT_CODE_JS = `// Tradefy JavaScript Strategy
+const DEFAULT_CODE_JS = `// Tradefy JavaScript Strategy (Client-side)
 //
-// Available in ctx:
-//   ctx.candles, ctx.close, ctx.ta, ctx.plot()
+// Available via 'api' object:
+//   api.candles      - Array of candle objects
+//   api.open/high/low/close/volume/time - price arrays
+//   api.drawRectangle(id, time1, price1, time2, price2, color, fill?)
+//   api.clearDrawings()
+//   api.state         - persistent object between calls
+//   api.buy(qty, sl?, tp?)
+//   api.sell(qty, sl?, tp?)
 
-export default {
-    title: "My Strategy",
-    overlay: true,
-    setup() { return {}; },
-    calculate(ctx) {
-        const sma20 = ctx.ta.sma(ctx.close, 20);
-        ctx.plot(sma20, "SMA 20", "#bfff1d", "line");
-    }
-};
+// Detect tight consolidation zone and draw it
+const LOOKBACK = 12;
+const TIGHT_RATIO = 0.003;
+const close = api.close;
+
+if (close.length < LOOKBACK) return;
+
+const recent = close.slice(-LOOKBACK);
+const zoneHigh = Math.max(...recent);
+const zoneLow = Math.min(...recent);
+const zoneRange = zoneHigh - zoneLow;
+const avgPrice = recent.reduce((a, b) => a + b, 0) / recent.length;
+
+if (zoneRange > avgPrice * TIGHT_RATIO) {
+    api.state.zone = null;
+    api.clearDrawings();
+    return;
+}
+
+const lastTime = api.time[api.time.length - 1];
+const firstTime = api.time[api.time.length - LOOKBACK];
+
+if (!api.state.zone) {
+    api.state.zone = { high: zoneHigh, low: zoneLow };
+}
+
+api.drawRectangle('zone', firstTime, zoneHigh, lastTime, zoneLow, '#888888', 'rgba(128,128,128,0.15)');
+
+const price = close[close.length - 1];
+if (price > zoneHigh && !api.state.broke) {
+    api.state.broke = true;
+    api.drawRectangle('zone', firstTime, zoneHigh, lastTime, zoneLow, '#ef4444', 'rgba(239,68,68,0.25)');
+} else if (price < zoneLow && !api.state.broke) {
+    api.state.broke = true;
+    api.drawRectangle('zone', firstTime, zoneHigh, lastTime, zoneLow, '#22c55e', 'rgba(34,197,94,0.25)');
+} else if (price <= zoneHigh && price >= zoneLow) {
+    api.state.broke = false;
+}
 `;
 
 const SUGGESTIONS = [
@@ -240,7 +275,7 @@ export const StrategyPanel: React.FC<StrategyPanelProps> = ({ symbol, code, isAc
     setStatus('loading');
     setMessage('Checking strategy...');
     try {
-      await onDeploy(symbol, code);
+      await onDeploy(symbol, code, editorLang);
       setStatus('success');
       setMessage('Strategy added to chart');
       setTimeout(() => setStatus('idle'), 3000);

@@ -28,9 +28,15 @@ impl StrategyEngine {
         symbol.replace("/", "").replace("-", "").to_uppercase()
     }
 
-    pub fn deploy(&self, symbol: String, code: String) -> Result<(), String> {
+    pub fn deploy(&self, symbol: String, code: String, history: Vec<f64>, ohlc_history: Vec<Candle>) -> Result<(), String> {
         let normalized = Self::normalize_symbol(&symbol);
         let runtime = PythonRuntime::new();
+        if !history.is_empty() {
+            runtime.seed_history(history);
+        }
+        if !ohlc_history.is_empty() {
+            runtime.seed_ohlc_history(ohlc_history);
+        }
         if let Err(e) = runtime.execute_strategy(&code, 0.0) {
             let err_msg = format!("Python syntax error in strategy: {}", e);
             tracing::warn!("{}", err_msg);
