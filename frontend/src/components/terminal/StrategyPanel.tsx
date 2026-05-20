@@ -36,16 +36,24 @@ function bodyMid(idx) {
 }
 
 // Scan all consolidation zones (non-overlapping)
+// A zone forms when ALL body midpoints stay within tightPct of each other
 const zones = [];
 let i = 0;
 while (i < api.close.length) {
   let j = i + 1;
-  const mids = [bodyMid(i)];
+  let minMid = bodyMid(i);
+  let maxMid = bodyMid(i);
+  let sumMids = bodyMid(i);
+  let count = 1;
   while (j < api.close.length) {
-    const avg = mids.reduce((a, b) => a + b, 0) / mids.length;
     const m = bodyMid(j);
-    if (avg !== 0 && Math.abs(m - avg) / Math.abs(avg) <= tightPct) {
-      mids.push(m);
+    const newMin = Math.min(minMid, m);
+    const newMax = Math.max(maxMid, m);
+    const newSum = sumMids + m;
+    const newCount = count + 1;
+    const newAvg = newSum / newCount;
+    if ((newMax - newMin) / Math.abs(newAvg) <= tightPct) {
+      minMid = newMin; maxMid = newMax; sumMids = newSum; count = newCount;
       j++;
     } else break;
   }
@@ -67,14 +75,14 @@ for (const z of zones) {
   const endTime = api.time[z.endIdx];
 
   let color = '#888888';
-  let fill = 'rgba(128,128,128,0.15)';
+  let fill = 'rgba(128,128,128,0.3)';
 
   if (api.close[last] > z.high) {
     color = '#ef4444';
-    fill = 'rgba(239,68,68,0.2)';
+    fill = 'rgba(239,68,68,0.35)';
   } else if (api.close[last] < z.low) {
     color = '#22c55e';
-    fill = 'rgba(34,197,94,0.2)';
+    fill = 'rgba(34,197,94,0.35)';
   }
 
   api.drawRectangle('zone-' + z.startIdx, startTime, z.high, endTime, z.low, color, fill);

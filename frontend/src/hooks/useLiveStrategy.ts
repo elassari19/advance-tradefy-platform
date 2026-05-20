@@ -57,6 +57,12 @@ export function useLiveStrategy(code: string | null, candles: Candle[]): Strateg
 
   useEffect(() => {
     _state = {};
+    drawingsRef.current = [];
+    plotSeriesRef.current = [];
+    markersRef.current = [];
+    setDrawings([]);
+    setPlotSeries([]);
+    setMarkers([]);
   }, [code]);
 
   useEffect(() => {
