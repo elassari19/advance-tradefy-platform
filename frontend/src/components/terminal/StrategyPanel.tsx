@@ -39,24 +39,31 @@ const DEFAULT_CODE_JS = `// Tradefy JavaScript Strategy (Client-side)
 //   api.buy(qty, sl?, tp?)  - adds buy arrow on chart
 //   api.sell(qty, sl?, tp?)  - adds sell arrow on chart
 
-// SMA Crossover Strategy Example
-const fast = ta.sma(api.close, 9);
-const slow = ta.sma(api.close, 21);
+// Zone Breakout Detection Strategy
+const zonePeriod = 8;
+const tightRangePct = 0.003;
 
-// Plot moving averages on the chart
-api.plot(fast, 'Fast SMA', '#FFD700', 'line');
-api.plot(slow, 'Slow SMA', '#FF6B6B', 'line');
+const recentCandles = api.close.slice(-zonePeriod - 1, -1);
+const zoneHigh = Math.max(...recentCandles);
+const zoneLow = Math.min(...recentCandles);
+const zoneRange = zoneHigh - zoneLow;
+const avgPrice = recentCandles.reduce((a, b) => a + b, 0) / recentCandles.length;
 
-// Generate buy/sell signals on crossover
-const crossUp = ta.crossover(fast, slow);
-const crossDown = ta.crossunder(fast, slow);
+api.hline(zoneHigh, 'Zone High', '#FFD700');
+api.hline(zoneLow, 'Zone Low', '#FFD700');
 
-api.plotshape(crossUp, 'Buy', 'belowbar', 'arrowup', '#22c55e');
-api.plotshape(crossDown, 'Sell', 'abovebar', 'arrowdown', '#ef4444');
+if (zoneRange < avgPrice * tightRangePct) {
+  const breakAbove = api.close[api.close.length - 1] > zoneHigh;
+  const breakBelow = api.close[api.close.length - 1] < zoneLow;
 
-// Place trades on latest bar
-if (crossUp[crossUp.length - 1]) api.buy(0.1);
-if (crossDown[crossDown.length - 1]) api.sell(0.1);
+  if (breakAbove) {
+    api.plotshape([breakAbove], 'Buy Signal', 'belowbar', 'arrowup', '#22c55e');
+    api.buy(0.1);
+  } else if (breakBelow) {
+    api.plotshape([breakBelow], 'Sell Signal', 'abovebar', 'arrowdown', '#ef4444');
+    api.sell(0.1);
+  }
+}
 `;
 
 const SUGGESTIONS = [

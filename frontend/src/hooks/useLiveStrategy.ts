@@ -135,6 +135,7 @@ export function useLiveStrategy(code: string | null, candles: Candle[]): Strateg
         }
       },
       plotshape: (series, title, location, style, color) => {
+        if (!Array.isArray(series)) series = [series];
         const shapeStyle = SHAPE_STYLE_MAP[(style || 'arrowup').toLowerCase().replace(/\s/g, '')] || 'arrow-up';
         const c = color || '#bfff1d';
         const locationOffset = location === 'belowbar' ? 1 : -1;
@@ -174,11 +175,13 @@ export function useLiveStrategy(code: string | null, candles: Candle[]): Strateg
       clearDrawings,
       get state() { return _state; },
       set state(v) { _state = v; },
-      buy: (qty, _sl, _tp) => {
+      buy: (qty, sl, tp) => {
+        if (typeof sl === 'object' && sl !== null) { tp = sl.tp; sl = sl.sl; }
         const idx = candles.length - 1;
         collectedMarkers.push({ time: time[idx], type: 'buy', price: close[idx], text: `B${qty ? ` ${qty}` : ''}` });
       },
-      sell: (qty, _sl, _tp) => {
+      sell: (qty, sl, tp) => {
+        if (typeof sl === 'object' && sl !== null) { tp = sl.tp; sl = sl.sl; }
         const idx = candles.length - 1;
         collectedMarkers.push({ time: time[idx], type: 'sell', price: close[idx], text: `S${qty ? ` ${qty}` : ''}` });
       },
