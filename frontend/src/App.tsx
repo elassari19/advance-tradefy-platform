@@ -1112,6 +1112,39 @@ export function App() {
           testingConnectionId={testingConnectionId}
         />
       )}
+      </div>
+
+      <SlidePanel isOpen={rightPanel !== null} onClose={() => setRightPanel(null)}>
+        {rightPanel === 'script' && (
+          <AIChat 
+            symbol={activeSymbol.replace('/', '')} 
+            timeframe={formatTimeframe(timeframe)}
+            onApplyCode={handleApplyCode}
+          />
+        )}
+        {rightPanel === 'strategy' && (
+          <StrategyPanel
+            symbol={activeSymbol}
+            code={currentStrategyCode}
+            isActive={currentStrategyActive}
+            onCodeChange={handleStrategyCodeChange}
+            onDeploy={handleDeployStrategy}
+            onRemove={handleRemoveStrategy}
+            onSave={handleSaveStrategy}
+            onLoad={handleLoadStrategy}
+          />
+        )}
+        {rightPanel === 'alerts' && (
+          <AlertsList
+            alerts={alerts}
+            webhookLogs={webhookLogs}
+            onAdd={handleAddAlert}
+            onEdit={handleEditAlert}
+            onDelete={handleDeleteAlert}
+            onToggle={handleToggleAlert}
+          />
+        )}
+      </SlidePanel>
 
       <AlertCreator
         isOpen={showAlertCreator}
@@ -1186,38 +1219,6 @@ export function App() {
         </div>
       )}
 
-      <SlidePanel isOpen={rightPanel !== null} onClose={() => setRightPanel(null)}>
-        {rightPanel === 'script' && (
-          <AIChat 
-            symbol={activeSymbol.replace('/', '')} 
-            timeframe={formatTimeframe(timeframe)}
-            onApplyCode={handleApplyCode}
-          />
-        )}
-        {rightPanel === 'strategy' && (
-          <StrategyPanel
-            symbol={activeSymbol}
-            code={currentStrategyCode}
-            isActive={currentStrategyActive}
-            onCodeChange={handleStrategyCodeChange}
-            onDeploy={handleDeployStrategy}
-            onRemove={handleRemoveStrategy}
-            onSave={handleSaveStrategy}
-            onLoad={handleLoadStrategy}
-          />
-        )}
-        {rightPanel === 'alerts' && (
-          <AlertsList
-            alerts={alerts}
-            webhookLogs={webhookLogs}
-            onAdd={handleAddAlert}
-            onEdit={handleEditAlert}
-            onDelete={handleDeleteAlert}
-            onToggle={handleToggleAlert}
-          />
-        )}
-      </SlidePanel>
-
       {/* Backtest Overlay Toggle */}
       {(backtestResult || backtestTradesState.length > 0) && view === 'trade' && (
         <button
@@ -1233,7 +1234,6 @@ export function App() {
           {showBacktestOverlay ? 'Hide Trades' : 'Show Trades'}
         </button>
       )}
-      </div>
     </div>
   );
 }
