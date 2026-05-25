@@ -87,6 +87,37 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
   const [paramValues, setParamValues] = useState<Record<string, Record<string, string>>>({});
   const [selectedColors, setSelectedColors] = useState<Record<string, string>>({});
 
+  const filteredBuiltIns = useMemo(() => {
+    if (!search) return BUILTIN_DEFS;
+    const q = search.toLowerCase();
+    return BUILTIN_DEFS.filter(d =>
+      d.label.toLowerCase().includes(q) ||
+      (INDICATOR_DESCRIPTIONS[d.id] || '').toLowerCase().includes(q) ||
+      d.category.toLowerCase().includes(q)
+    );
+  }, [search]);
+
+  const filteredCustom = useMemo(() => {
+    if (!search) return customIndicators;
+    const q = search.toLowerCase();
+    return customIndicators.filter(d => d.name.toLowerCase().includes(q));
+  }, [search, customIndicators]);
+
+  const categoryOrder = ['favorites', 'trend', 'oscillators', 'volume', 'custom'];
+  const categoryLabels: Record<string, string> = {
+    favorites: 'Favorites', trend: 'Trend', oscillators: 'Oscillators', volume: 'Volume', custom: 'Custom',
+  };
+
+  const groupedByCategory: Record<string, typeof BUILTIN_DEFS> = {};
+  for (const d of filteredBuiltIns) {
+    if (!groupedByCategory[d.category]) groupedByCategory[d.category] = [];
+    groupedByCategory[d.category].push(d);
+  }
+
+  if (filteredCustom.length > 0 || categoryOrder.includes('custom')) {
+    if (!groupedByCategory.custom) groupedByCategory.custom = [];
+  }
+
   if (!isOpen) return null;
 
   const toggleCollapse = (key: string) => setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
@@ -167,37 +198,6 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
       [indicatorId]: { ...(prev[indicatorId] || {}), [key]: value },
     }));
   };
-
-  const filteredBuiltIns = useMemo(() => {
-    if (!search) return BUILTIN_DEFS;
-    const q = search.toLowerCase();
-    return BUILTIN_DEFS.filter(d =>
-      d.label.toLowerCase().includes(q) ||
-      (INDICATOR_DESCRIPTIONS[d.id] || '').toLowerCase().includes(q) ||
-      d.category.toLowerCase().includes(q)
-    );
-  }, [search]);
-
-  const filteredCustom = useMemo(() => {
-    if (!search) return customIndicators;
-    const q = search.toLowerCase();
-    return customIndicators.filter(d => d.name.toLowerCase().includes(q));
-  }, [search, customIndicators]);
-
-  const categoryOrder = ['favorites', 'trend', 'oscillators', 'volume', 'custom'];
-  const categoryLabels: Record<string, string> = {
-    favorites: 'Favorites', trend: 'Trend', oscillators: 'Oscillators', volume: 'Volume', custom: 'Custom',
-  };
-
-  const groupedByCategory: Record<string, typeof BUILTIN_DEFS> = {};
-  for (const d of filteredBuiltIns) {
-    if (!groupedByCategory[d.category]) groupedByCategory[d.category] = [];
-    groupedByCategory[d.category].push(d);
-  }
-
-  if (filteredCustom.length > 0 || categoryOrder.includes('custom')) {
-    if (!groupedByCategory.custom) groupedByCategory.custom = [];
-  }
 
   const closeAndOpenStrategy = () => {
     onClose();
