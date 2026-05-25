@@ -49,6 +49,16 @@ function formatTimeframe(minutes: number): string {
   return `${minutes}m`;
 }
 
+const CHART_STATE_KEY = 'tradefy-chart-state';
+
+function getSavedChartState() {
+  try {
+    const saved = localStorage.getItem(CHART_STATE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return {};
+}
+
 const BacktestChartPanel = ({
   symbol,
   timeframe,
@@ -103,13 +113,13 @@ export function App() {
 
   const [tabs, setTabs] = useState<string[]>(['BTC/USDT', 'ETH/USDT', 'SOL/USDT']);
   const [activeSymbol, setActiveSymbol] = useState('BTC/USDT');
-  const [timeframe, setTimeframe] = useState(5);
-  const [chartType, setChartType] = useState<ChartType>('candle');
+  const [timeframe, setTimeframe] = useState(() => getSavedChartState().timeframe ?? 5);
+  const [chartType, setChartType] = useState<ChartType>(() => getSavedChartState().chartType || 'candle');
 
-  const [strategyCodes, setStrategyCodes] = useState<Record<string, string>>({});
-  const [activeStrategySymbols, setActiveStrategySymbols] = useState<string[]>([]);
+  const [strategyCodes, setStrategyCodes] = useState<Record<string, string>>(() => getSavedChartState().strategyCodes ?? {});
+  const [activeStrategySymbols, setActiveStrategySymbols] = useState<string[]>(() => getSavedChartState().activeStrategySymbols ?? []);
   const [clientStrategyCode, setClientStrategyCode] = useState<string | null>(null);
-  const [indicatorConfigs, setIndicatorConfigs] = useState<Record<string, IndicatorConfig[]>>({});
+  const [indicatorConfigs, setIndicatorConfigs] = useState<Record<string, IndicatorConfig[]>>(() => getSavedChartState().indicatorConfigs ?? {});
   const [customIndicatorDefs, setCustomIndicatorDefs] = useState<CustomIndicatorDef[]>(() => {
     try {
       const saved = localStorage.getItem('customIndicators');
@@ -133,7 +143,7 @@ export function App() {
   const [showBacktestOverlay, setShowBacktestOverlay] = useState(false);
   const [orderPanelOpen, setOrderPanelOpen] = useState(true);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>('pointer');
-  const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const [drawings, setDrawings] = useState<Drawing[]>(() => getSavedChartState().drawings ?? []);
   const backtestTradesRef = useRef<BacktestTrade[]>([]);
   const [backtestTradesState, setBacktestTradesState] = useState<BacktestTrade[]>([]);
   const [backtestLiveMode, setBacktestLiveMode] = useState(false);
@@ -190,27 +200,7 @@ export function App() {
   }, []);
 
   // ── Persist chart state ──
-  const CHART_STATE_KEY = 'tradefy-chart-state';
-  const loadedRef = useRef(false);
-
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(CHART_STATE_KEY);
-      if (saved) {
-        const state = JSON.parse(saved);
-        if (state.timeframe != null) setTimeframe(state.timeframe);
-        if (state.chartType) setChartType(state.chartType);
-        if (state.drawings) setDrawings(state.drawings);
-        if (state.strategyCodes) setStrategyCodes(state.strategyCodes as Record<string, string>);
-        if (state.activeStrategySymbols) setActiveStrategySymbols(state.activeStrategySymbols);
-        if (state.indicatorConfigs) setIndicatorConfigs(state.indicatorConfigs as Record<string, IndicatorConfig[]>);
-      }
-    } catch {}
-    loadedRef.current = true;
-  }, []);
-
-  useEffect(() => {
-    if (!loadedRef.current) return;
     const state = { timeframe, chartType, drawings, strategyCodes, activeStrategySymbols, indicatorConfigs };
     localStorage.setItem(CHART_STATE_KEY, JSON.stringify(state));
   }, [timeframe, chartType, drawings, strategyCodes, activeStrategySymbols, indicatorConfigs]);
