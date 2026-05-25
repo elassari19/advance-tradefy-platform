@@ -70,6 +70,7 @@ function useMarketDataForSymbol(symbol: string, timeframe: number) {
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     setIsInitializing(true);
     fetchHistory(symbol, timeframe);
 
