@@ -1,13 +1,20 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use crate::models::{Candle, OrderRequest, Tick, TradeSide, WebhookConfig};
+use crate::models::{OrderRequest, TradeSide, WebhookConfig};
 use crate::simulator::SimulatorEngine;
-use crate::python_runtime::PythonRuntime;
+
+#[derive(Clone, Debug)]
+pub struct StrategySignal {
+    pub action: String,
+    pub quantity: f64,
+    pub take_profit: Option<f64>,
+    pub stop_loss: Option<f64>,
+}
 
 struct StrategyInstance {
     code: String,
     symbol: String,
-    runtime: PythonRuntime,
+    language: String,
 }
 
 pub struct StrategyEngine {
@@ -23,29 +30,19 @@ impl StrategyEngine {
         }
     }
 
-    /// Normalize symbol format: "BTC/USDT" -> "BTCUSDT" for Binance compatibility
     pub fn normalize_symbol(symbol: &str) -> String {
         symbol.replace("/", "").replace("-", "").to_uppercase()
     }
 
-    pub fn deploy(&self, symbol: String, code: String, history: Vec<f64>, ohlc_history: Vec<Candle>) -> Result<(), String> {
+    pub fn deploy(&self, symbol: String, code: String, language: String) -> Result<(), String> {
         let normalized = Self::normalize_symbol(&symbol);
-        let runtime = PythonRuntime::new();
-        if !history.is_empty() {
-            runtime.seed_history(history);
-        }
-        if !ohlc_history.is_empty() {
-            runtime.seed_ohlc_history(ohlc_history);
-        }
-        if let Err(e) = runtime.execute_strategy(&code, 0.0) {
-            let err_msg = format!("Python syntax error in strategy: {}", e);
-            tracing::warn!("{}", err_msg);
-            return Err(err_msg);
-        }
-
         let mut strategies = self.strategies.lock().map_err(|_| "Failed to lock strategies")?;
-        strategies.insert(normalized.clone(), StrategyInstance { code, symbol: normalized, runtime });
-        tracing::info!("Strategy deployed for symbol");
+        strategies.insert(normalized.clone(), StrategyInstance {
+            code,
+            symbol: normalized.clone(),
+            language,
+        });
+        tracing::info!("Strategy deployed for symbol: {}", normalized);
         Ok(())
     }
 
@@ -61,17 +58,20 @@ impl StrategyEngine {
         strategies.keys().cloned().collect()
     }
 
-    pub fn get_strategies_for_stats(&self) -> HashMap<String, crate::python_runtime::ExecutionStats> {
+    pub fn get_strategies_for_stats(&self) -> HashMap<String, serde_json::Value> {
         let strategies = self.strategies.lock().unwrap();
         let mut stats = HashMap::new();
         for (symbol, inst) in strategies.iter() {
-            let exec_stats = inst.runtime.get_execution_stats();
-            stats.insert(symbol.clone(), exec_stats);
+            stats.insert(symbol.clone(), serde_json::json!({
+                "symbol": inst.symbol,
+                "language": inst.language,
+                "code_size": inst.code.len(),
+            }));
         }
         stats
     }
 
-    fn process_signal(&self, signal: &crate::python_runtime::PythonSignal, symbol: &str, price: f64, time: u64, webhook_configs: &[WebhookConfig]) {
+    pub fn process_order_signal(&self, signal: &StrategySignal, symbol: &str, price: f64, time: u64, webhook_configs: &[WebhookConfig]) {
         match signal.action.as_str() {
             "CLOSE" => {
                 let state = self.simulator.get_state();
@@ -82,7 +82,6 @@ impl StrategyEngine {
                 }
             }
             "EXIT" => {
-                // Exit with optional TP/SL — close all positions for the symbol
                 let state = self.simulator.get_state();
                 for pos in &state.open_positions {
                     if pos.symbol == symbol {
@@ -119,41 +118,12 @@ impl StrategyEngine {
         }
     }
 
-    pub fn on_tick(&self, tick: Tick, webhook_configs: Vec<WebhookConfig>) {
-        let instance = {
-            let strategies = self.strategies.lock().unwrap();
-            strategies.get(&tick.symbol).map(|s| (s.code.clone(), s.runtime.clone()))
-        };
-
-        if let Some((code, runtime)) = instance {
-            let state = self.simulator.get_state();
-            let pos = state.open_positions.iter().find(|p| p.symbol == tick.symbol);
-            let (pos_size, pos_avg, equity) = match pos {
-                Some(p) => (p.quantity, p.entry_price, state.balance + state.open_positions.iter().map(|pos| pos.pnl).sum::<f64>()),
-                None => (0.0, 0.0, state.balance),
-            };
-            runtime.set_position_state(pos_size, pos_avg, equity);
-
-            match runtime.execute_strategy(&code, tick.price) {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!("Python execution error: {}", e);
-                }
-            }
-
-            if let Some(signal) = runtime.get_signal() {
-                tracing::info!("Strategy signal: {} qty={}", signal.action, signal.quantity);
-                self.process_signal(&signal, &tick.symbol, tick.price, tick.time, &webhook_configs);
-            }
-        }
-    }
-
     pub async fn save_strategy_state(&self) {
         let count = match self.strategies.lock() {
             Ok(s) => s.len(),
             Err(_) => return,
         };
-        tracing::info!("Saving {} strategy states (state persistence placeholder)", count);
+        tracing::info!("Saving {} strategy states", count);
     }
 
     pub fn get_all_strategies(&self) -> Vec<(String, String)> {
@@ -164,39 +134,12 @@ impl StrategyEngine {
     pub fn restore_strategies(&self, strategies: Vec<(String, String)>) {
         let mut map = self.strategies.lock().unwrap();
         for (symbol, code) in strategies {
-            let runtime = PythonRuntime::new();
-            let _ = runtime.execute_strategy(&code, 0.0);
-            map.insert(symbol.clone(), StrategyInstance { code, symbol, runtime });
+            map.insert(symbol.clone(), StrategyInstance {
+                code,
+                symbol,
+                language: "python".to_string(),
+            });
         }
         tracing::info!("Restored {} strategies", map.len());
-    }
-
-    pub fn on_candle(&self, candle: &Candle, webhook_configs: Vec<WebhookConfig>) {
-        let instance = {
-            let strategies = self.strategies.lock().unwrap();
-            strategies.get(&candle.symbol).map(|s| (s.code.clone(), s.runtime.clone()))
-        };
-
-        if let Some((code, runtime)) = instance {
-            let state = self.simulator.get_state();
-            let pos = state.open_positions.iter().find(|p| p.symbol == candle.symbol);
-            let (pos_size, pos_avg, equity) = match pos {
-                Some(p) => (p.quantity, p.entry_price, state.balance + state.open_positions.iter().map(|pos| pos.pnl).sum::<f64>()),
-                None => (0.0, 0.0, state.balance),
-            };
-            runtime.set_position_state(pos_size, pos_avg, equity);
-
-            match runtime.execute_on_candle(&code, candle) {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!("Python candle execution error: {}", e);
-                }
-            }
-
-            if let Some(signal) = runtime.get_signal() {
-                tracing::info!("Strategy candle signal: {} qty={}", signal.action, signal.quantity);
-                self.process_signal(&signal, &candle.symbol, candle.close, candle.time, &webhook_configs);
-            }
-        }
     }
 }

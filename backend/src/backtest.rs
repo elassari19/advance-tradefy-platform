@@ -1,10 +1,9 @@
 use crate::exchange::ExchangeStream;
 use crate::models::{
     BacktestEvent, BacktestProgress, BacktestRequest, BacktestResult, BacktestResultSummary,
-    BacktestTrade, Candle, EquityPoint, OptimizeRequest, OptimizationResult, OrderRequest,
+    BacktestTrade, Candle, EquityPoint, OptimizeRequest, OptimizationResult,
     PreparedData, TestingMode, Tick, TradeSide,
 };
-use crate::python_runtime::PythonRuntime;
 use crate::simulator::SimulatorEngine;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -162,7 +161,6 @@ impl BacktestEngine {
         }
 
         let engine = SimulatorEngine::new(self.request.initial_balance);
-        let runtime = PythonRuntime::new();
 
         let mut all_events: Vec<BacktestEvent> = Vec::new();
         let mut equity_curve = Vec::with_capacity(ticks.len() / 100);
@@ -177,18 +175,8 @@ impl BacktestEngine {
         for (idx, tick) in ticks.iter().enumerate() {
             // Build micro-candle context
             if micro_candle.is_none() || tick.time >= next_micro_time {
-                if let Some(c) = micro_candle.take() {
-                    let state = engine.get_state();
-                    let pos = state.open_positions.iter().find(|p| p.symbol == self.request.symbol);
-                    let (pos_size, pos_avg, equity) = match pos {
-                        Some(p) => (p.quantity, p.entry_price, state.balance + state.open_positions.iter().map(|pos| pos.pnl).sum::<f64>()),
-                        None => (0.0, 0.0, state.balance),
-                    };
-                    runtime.set_position_state(pos_size, pos_avg, equity);
-
-                    if let Err(e) = runtime.execute_on_candle(&self.request.strategy_code, &c) {
-                        tracing::warn!("Backtest Python error at tick {}: {}", idx, e);
-                    }
+                if let Some(_c) = micro_candle.take() {
+                    // Strategy execution delegated to Electron main process
                 }
                 next_micro_time = tick.time + 1;
             }
@@ -207,41 +195,6 @@ impl BacktestEngine {
             current_micro.low = current_micro.low.min(tick.price);
             current_micro.close = tick.price;
             current_micro.volume += 1.0;
-
-            if let Some(signal) = runtime.get_signal() {
-                match signal.action.as_str() {
-                    "CLOSE" | "EXIT" => {
-                        let st = engine.get_state();
-                        for p in &st.open_positions {
-                            if p.symbol == self.request.symbol {
-                                if let Ok(event) = engine.close_position(&p.id, tick.time) {
-                                    all_events.push(event);
-                                }
-                            }
-                        }
-                    }
-                    action if action == "BUY" || action == "SELL" => {
-                        let order = OrderRequest {
-                            symbol: self.request.symbol.clone(),
-                            side: if action == "BUY" { TradeSide::Buy } else { TradeSide::Sell },
-                            quantity: signal.quantity,
-                            take_profit: signal.take_profit,
-                            stop_loss: signal.stop_loss,
-                        };
-                        let slip = tick.price * self.request.slippage;
-                        let fill_price = match order.side {
-                            TradeSide::Buy => tick.price + slip,
-                            TradeSide::Sell => tick.price - slip,
-                        };
-                        if let Ok((_, event)) = engine.place_order(order, fill_price, tick.time) {
-                            all_events.push(event);
-                        }
-                    }
-                    _ => {
-                        tracing::warn!("Unknown backtest signal action: {}", signal.action);
-                    }
-                }
-            }
 
             let tick_events = engine.process_tick(tick);
             all_events.extend(tick_events);
@@ -316,7 +269,6 @@ impl BacktestEngine {
         }
 
         let engine = SimulatorEngine::new(self.request.initial_balance);
-        let runtime = PythonRuntime::new();
 
         let mut all_events: Vec<BacktestEvent> = Vec::new();
         let mut equity_curve = Vec::with_capacity(candles.len());
@@ -341,61 +293,7 @@ impl BacktestEngine {
                 }
             }
 
-            // ControlPoints: simulate O→H→L→C path
-            let execution_price = if self.request.testing_mode == TestingMode::OpenPricesOnly {
-                candle.open
-            } else if self.request.testing_mode == TestingMode::ClosePricesOnly {
-                candle.close
-            } else {
-                candle.close
-            };
-
-            let state = engine.get_state();
-            let pos = state.open_positions.iter().find(|p| p.symbol == self.request.symbol);
-            let (pos_size, pos_avg, equity) = match pos {
-                Some(p) => (p.quantity, p.entry_price, state.balance + state.open_positions.iter().map(|pos| pos.pnl).sum::<f64>()),
-                None => (0.0, 0.0, state.balance),
-            };
-            runtime.set_position_state(pos_size, pos_avg, equity);
-
-            if let Err(e) = runtime.execute_on_candle(&self.request.strategy_code, candle) {
-                tracing::warn!("Backtest Python error at candle {}: {}", idx, e);
-            }
-
-            if let Some(signal) = runtime.get_signal() {
-                match signal.action.as_str() {
-                    "CLOSE" | "EXIT" => {
-                        let st = engine.get_state();
-                        for p in &st.open_positions {
-                            if p.symbol == self.request.symbol {
-                                if let Ok(event) = engine.close_position(&p.id, candle.time) {
-                                    all_events.push(event);
-                                }
-                            }
-                        }
-                    }
-                    action if action == "BUY" || action == "SELL" => {
-                        let order = OrderRequest {
-                            symbol: self.request.symbol.clone(),
-                            side: if action == "BUY" { TradeSide::Buy } else { TradeSide::Sell },
-                            quantity: signal.quantity,
-                            take_profit: signal.take_profit,
-                            stop_loss: signal.stop_loss,
-                        };
-                        let slip = execution_price * self.request.slippage;
-                        let fill_price = match order.side {
-                            TradeSide::Buy => execution_price + slip,
-                            TradeSide::Sell => execution_price - slip,
-                        };
-                        if let Ok((_, event)) = engine.place_order(order, fill_price, candle.time) {
-                            all_events.push(event);
-                        }
-                    }
-                    _ => {
-                        tracing::warn!("Unknown backtest signal action: {}", signal.action);
-                    }
-                }
-            }
+            // Strategy execution delegated to Electron main process
 
             if self.request.testing_mode == TestingMode::ControlPoints {
                 // Intra-bar simulation: check TP/SL at O→H→L→C

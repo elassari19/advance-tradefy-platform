@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Position, TradeHistory } from "../../hooks/useSimulator";
-import { X, Edit2, Check, XCircle } from 'lucide-react';
+import { X, Edit2, Check, XCircle, Terminal } from 'lucide-react';
+import { globalStrategyLogs } from '../../hooks/useLiveStrategy';
 
 interface TerminalTabsProps {
   positions: Position[];
@@ -13,9 +14,17 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
   positions, history,
   onClosePosition, onUpdatePosition,
 }) => {
-  const [activeTab, setActiveTab] = useState<'positions' | 'history' | 'logs'>('positions');
+  const [activeTab, setActiveTab] = useState<'positions' | 'history' | 'strategy'>('positions');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<{ tp: string; sl: string }>({ tp: '', sl: '' });
+  const [strategyLogs, setStrategyLogs] = useState<string[]>([]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setStrategyLogs([...globalStrategyLogs]);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const startEdit = (pos: Position) => {
     setEditingId(pos.id);
@@ -59,11 +68,12 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
           History ({history.length})
         </button>
         <button
-          onClick={() => setActiveTab('logs')}
-          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${activeTab === 'logs' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'
+          onClick={() => setActiveTab('strategy')}
+          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${activeTab === 'strategy' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-zinc-500 hover:text-zinc-300'
             }`}
         >
-          Logs
+          <Terminal size={12} className="inline mr-1" />
+          Strategy Logs
         </button>
       </div>
 
@@ -192,8 +202,32 @@ export const TerminalTabs: React.FC<TerminalTabsProps> = ({
           </table>
         )}
 
-        {activeTab === 'logs' && (
-          <div className="p-4 text-zinc-600 italic text-center">System logs will appear here.</div>
+        {activeTab === 'strategy' && (
+          <div className="h-full flex flex-col">
+            <div className="flex-1 overflow-auto font-mono text-[11px] p-4 space-y-1 bg-zinc-950">
+              {strategyLogs.length === 0 ? (
+                <div className="text-zinc-600 italic text-center py-8">
+                  No strategy logs yet. Deploy a JavaScript strategy to see logs here.
+                </div>
+              ) : (
+                strategyLogs.map((log, i) => (
+                  <div key={i} className="text-zinc-400 hover:bg-zinc-900/50 px-1 py-0.5 rounded">
+                    <span className="text-zinc-600 mr-2">[{i + 1}]</span>
+                    {log}
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="shrink-0 px-4 py-2 border-t border-zinc-800 bg-zinc-900/50 flex items-center justify-between">
+              <span className="text-[10px] text-zinc-500">{strategyLogs.length} entries</span>
+              <button
+                onClick={() => setStrategyLogs([])}
+                className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

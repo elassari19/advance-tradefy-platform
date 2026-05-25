@@ -1,8 +1,10 @@
 import { app, BrowserWindow, ipcMain, Menu, Notification, dialog, session, Tray, nativeImage, crashReporter, SaveDialogOptions } from 'electron';
 import path from 'path';
 import net from 'net';
+import WebSocket from 'ws';
 import { autoUpdater } from 'electron-updater';
 import started from 'electron-squirrel-startup';
+import { ElectronStrategyRunner } from './strategy-runner';
 
 if (started) {
   app.quit();
@@ -11,6 +13,8 @@ if (started) {
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let aboutWindow: BrowserWindow | null = null;
+const strategyRunners = new Map<string, ElectronStrategyRunner>();
+let marketDataWs: WebSocket | null = null;
 
 const isDev = !app.isPackaged;
 
@@ -491,6 +495,94 @@ function registerIpcHandlers() {
 
   // ── 9.6 Open About Window ──
   ipcMain.handle('app:open-about', () => createAboutWindow());
+
+  // ── Strategy Engine IPC ──
+  ipcMain.handle('strategy:deploy', async (_event, params: { symbol: string; code: string; language?: string }) => {
+    const normalizedSymbol = params.symbol.replace('/', '').toUpperCase();
+    let runner = strategyRunners.get(normalizedSymbol);
+    if (!runner) {
+      runner = new ElectronStrategyRunner(mainWindow);
+      strategyRunners.set(normalizedSymbol, runner);
+    }
+    const result = runner.load(normalizedSymbol, params.code);
+    if (result.success) {
+      startMarketDataConnection();
+      mainWindow?.webContents.send('strategy:status', { symbol: normalizedSymbol, active: true });
+    }
+    return result;
+  });
+
+  ipcMain.handle('strategy:remove', async (_event, symbol: string) => {
+    const normalized = symbol.replace('/', '').toUpperCase();
+    const runner = strategyRunners.get(normalized);
+    if (runner) {
+      runner.cleanup();
+      strategyRunners.delete(normalized);
+    }
+    mainWindow?.webContents.send('strategy:status', { symbol: normalized, active: false });
+    return { success: true };
+  });
+
+  ipcMain.handle('strategy:active', async () => {
+    return Array.from(strategyRunners.keys());
+  });
+
+  ipcMain.handle('strategy:submit-order', async (_event, order: { symbol: string; side: string; quantity: number; stopLoss?: number; takeProfit?: number }) => {
+    try {
+      const res = await fetch('http://127.0.0.1:3000/api/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: order.symbol,
+          side: order.side,
+          quantity: order.quantity,
+          stop_loss: order.stopLoss,
+          take_profit: order.takeProfit,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return { success: res.ok, ...data };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  });
+}
+
+function startMarketDataConnection(): void {
+  if (marketDataWs && marketDataWs.readyState === WebSocket.OPEN) return;
+
+  try {
+    marketDataWs = new WebSocket('ws://127.0.0.1:3000/ws/live');
+
+    marketDataWs.on('open', () => {
+      console.log('[strategy-engine] Connected to market data');
+    });
+
+    marketDataWs.on('message', (data: WebSocket.Data) => {
+      try {
+        const tick = JSON.parse(data.toString());
+        if (!tick || !tick.symbol) return;
+
+        const runner = strategyRunners.get(tick.symbol);
+        if (runner) {
+          runner.addTick(tick);
+        }
+      } catch {}
+    });
+
+    marketDataWs.on('close', () => {
+      marketDataWs = null;
+      setTimeout(() => {
+        if (strategyRunners.size > 0) {
+          startMarketDataConnection();
+        }
+      }, 3000);
+    });
+
+    marketDataWs.on('error', () => {
+      marketDataWs = null;
+    });
+  } catch {}
 }
 
 async function checkBackend(): Promise<boolean> {

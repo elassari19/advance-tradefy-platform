@@ -11,7 +11,6 @@ mod indicators;
 mod time_series;
 mod models;
 mod platform_connector;
-mod python_runtime;
 mod simulator;
 mod state_persistence;
 mod strategy;
@@ -321,7 +320,7 @@ async fn start_binance_stream(state: Arc<AppState>) {
                                     all_completed
                                 };
 
-                                let webhook_configs = {
+                                let _webhook_configs = {
                                     let c = state.webhook_configs.lock().unwrap();
                                     c.clone()
                                 };
@@ -331,8 +330,6 @@ async fn start_binance_stream(state: Arc<AppState>) {
                                     aggregators.get(&("BTCUSDT".to_string(), 5u32))
                                         .and_then(|agg| agg.get_current_candle().cloned())
                                 } {
-                                    state.strategy.on_candle(&current_candle, webhook_configs.clone());
-
                                     // Evaluate alerts on each candle update
                                     if let Some(agg) = {
                                         let aggregators = state.aggregators.lock().unwrap();
@@ -355,8 +352,6 @@ async fn start_binance_stream(state: Arc<AppState>) {
                                         }
                                     }
                                 }
-
-                                state.strategy.on_tick(tick.clone(), webhook_configs);
 
                                 for candle in &completed_candles {
                                     let _ = state.candle_tx.send(candle.clone());
@@ -540,21 +535,8 @@ async fn deploy_strategy(
         return (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "symbol is required" })));
     }
 
-    let normalized = StrategyEngine::normalize_symbol(&symbol);
-    let (history, ohlc_history) = {
-        let aggregators = state.aggregators.lock().unwrap();
-        let key = (normalized.clone(), 5u32);
-        match aggregators.get(&key) {
-            Some(agg) => {
-                let candles: Vec<Candle> = agg.get_history().iter().map(|c| (*c).clone()).collect();
-                let closes: Vec<f64> = candles.iter().map(|c| c.close).collect();
-                (closes, candles)
-            }
-            None => (vec![], vec![]),
-        }
-    };
-
-    match state.strategy.deploy(symbol, code.to_string(), history, ohlc_history) {
+    let language = payload.get("language").and_then(|v| v.as_str()).unwrap_or("javascript").to_string();
+    match state.strategy.deploy(symbol, code.to_string(), language) {
         Ok(_) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "success" }))),
         Err(e) => {
             tracing::error!("Strategy deploy error: {}", e);
@@ -1448,7 +1430,6 @@ async fn list_strategies(
 async fn get_execution_stats(
     State(state): State<Arc<AppState>>,
 ) -> Json<serde_json::Value> {
-    // Collect execution stats from all active strategy runtimes
     let active = state.strategy.get_active_symbols();
     let mut stats = Vec::new();
     for symbol in active {
@@ -1456,23 +1437,16 @@ async fn get_execution_stats(
         if let Some(runtime_stats) = strategies.get(&symbol) {
             stats.push(serde_json::json!({
                 "symbol": symbol,
-                "avg_ms": runtime_stats.avg_ms,
-                "max_ms": runtime_stats.max_ms,
-                "min_ms": runtime_stats.min_ms,
-                "count": runtime_stats.count,
-                "threshold_exceeded": runtime_stats.threshold_exceeded,
+                "language": runtime_stats.get("language"),
+                "code_size": runtime_stats.get("code_size"),
             }));
         } else {
             stats.push(serde_json::json!({
                 "symbol": symbol,
-                "avg_ms": 0.0,
-                "max_ms": 0.0,
-                "min_ms": 0.0,
-                "count": 0,
-                "threshold_exceeded": false,
             }));
         }
     }
+
     Json(serde_json::json!({ "stats": stats }))
 }
 

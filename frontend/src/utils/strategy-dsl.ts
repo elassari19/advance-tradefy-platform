@@ -1,7 +1,5 @@
 import type { Candle } from '../hooks/useMarketData';
 
-// ── TA Function Library (PineScript compatible) ──
-
 export function sma(data: number[], period: number): number[] {
   const result: number[] = new Array(data.length).fill(NaN);
   for (let i = period - 1; i < data.length; i++) {
@@ -202,7 +200,20 @@ export function iff(condition: boolean, a: number, b: number): number {
   return condition ? a : b;
 }
 
-// ── Strategy DSL types ──
+const ta = {
+  sma, ema, rsi, macd, bb, atr, stoch, vwap,
+  crossover, crossunder, highest, lowest, change, alma,
+  nz, iff,
+};
+
+export interface StrategySignal {
+  action: 'BUY' | 'SELL' | 'CLOSE' | 'EXIT';
+  quantity: number;
+  takeProfit?: number;
+  stopLoss?: number;
+  price?: number;
+  time?: number;
+}
 
 export interface StrategyConfig {
   title: string;
@@ -210,13 +221,6 @@ export interface StrategyConfig {
   initialCapital: number;
   commission: number;
   slippage: number;
-}
-
-export interface StrategySignal {
-  action: 'BUY' | 'SELL' | 'CLOSE' | 'EXIT';
-  quantity: number;
-  takeProfit?: number;
-  stopLoss?: number;
 }
 
 export interface StrategyContext {
@@ -230,107 +234,389 @@ export interface StrategyContext {
   barIndex: number;
   params: Record<string, number>;
   ta: typeof ta;
-  plot: (series: number[], title: string, color?: string, style?: string) => void;
-  plotshape: (series: number[], title?: string, location?: string, style?: string) => void;
+  plot: (series: number[], title?: string, color?: string, style?: string) => void;
+  plotshape: (series: (number | boolean)[], title?: string, location?: string, style?: string, color?: string) => void;
   hline: (price: number, title?: string, color?: string) => void;
+  buy: (qty?: number, sl?: number, tp?: number) => void;
+  sell: (qty?: number, sl?: number, tp?: number) => void;
+  close: () => void;
+  log: (msg: string) => void;
 }
 
-const ta = {
-  sma, ema, rsi, macd, bb, atr, stoch, vwap,
-  crossover, crossunder, highest, lowest, change, alma,
+const SHAPE_STYLE_MAP: Record<string, string> = {
+  arrowup: 'arrow-up',
+  arrowdown: 'arrow-down',
+  circle: 'circle',
+  square: 'square',
+  diamond: 'diamond',
+  cross: 'cross',
+  xcross: 'xcross',
+  triangleup: 'triangle-up',
+  triangledown: 'triangle-down',
+  labelup: 'arrow-up',
+  labeldown: 'arrow-down',
 };
 
-// ── Strategy Runner ──
+export interface PlotSeries {
+  id: string;
+  title: string;
+  color: string;
+  data: { time: number; value: number }[];
+}
+
+export interface StrategyMarker {
+  time: number;
+  type: 'buy' | 'sell';
+  price: number;
+  text: string;
+}
+
+export interface Drawing {
+  id: string;
+  type: string;
+  points: { time: number; price: number }[];
+  color: string;
+  shapeStyle?: string;
+  borderWidth?: number;
+  fillColor?: string;
+  size?: number;
+}
+
+export interface StrategyResult {
+  signals: StrategySignal[];
+  plots: PlotSeries[];
+  drawings: Drawing[];
+  markers: StrategyMarker[];
+  logs: string[];
+  errors: string[];
+}
 
 export class StrategyRunner {
   private config: StrategyConfig = {
-    title: 'JS Strategy',
+    title: 'Strategy',
     overlay: true,
     initialCapital: 10000,
     commission: 0.001,
     slippage: 0.0001,
   };
-  private setupFn: ((ctx: StrategyContext) => Record<string, number>) | null = null;
-  private calculateFn: ((ctx: StrategyContext) => void) | null = null;
+  private params: Record<string, number> = {};
+  private lastError: string | null = null;
 
-  load(code: string): { success: boolean; error?: string } {
+  load(code: string): { success: boolean; error?: string; config?: StrategyConfig } {
+    this.lastError = null;
     try {
-      const wrapped = `
-        return {
-          config: __config,
-          setup: ${this.extractSetup(code)},
-          calculate: ${this.extractCalculate(code)},
-        };
+      const wrappedCode = `
+        'use strict';
+        var __strategyConfig__ = ${JSON.stringify(this.config)};
+        var __params__ = {};
+        ${code}
+        return { config: __strategyConfig__, params: __params__ };
       `;
-      const fn = new Function('__config', wrapped);
-      const result = fn(this.config);
-      if (result.setup) this.setupFn = result.setup;
-      if (result.calculate) this.calculateFn = result.calculate;
-      return { success: true };
+      const fn = new Function('ta', wrappedCode);
+      const result = fn(ta);
+      if (result.config) {
+        this.config = { ...this.config, ...result.config };
+      }
+      if (result.params) {
+        this.params = result.params;
+      }
+      return { success: true, config: this.config };
     } catch (e: any) {
+      this.lastError = e.message;
       return { success: false, error: e.message };
     }
   }
 
-  private extractSetup(code: string): string {
-    const match = code.match(/setup\s*\(\s*\)\s*\{([^}]*)\}/s);
-    return match ? `function() { ${match[1]} }` : 'function() { return {}; }';
+  run(candles: Candle[], params?: Record<string, number>): StrategyResult {
+    const result: StrategyResult = {
+      signals: [],
+      plots: [],
+      drawings: [],
+      markers: [],
+      logs: [],
+      errors: [],
+    };
+
+    const open = candles.map(c => c.open as number);
+    const high = candles.map(c => c.high as number);
+    const low = candles.map(c => c.low as number);
+    const close = candles.map(c => c.close as number);
+    const volume = candles.map(c => c.volume as number);
+    const time = candles.map(c => c.time as number);
+
+    const finalParams = { ...this.params, ...params };
+    const plotsMap = new Map<string, { title: string; color: string; values: { time: number; value: number }[] }>();
+
+    const positionSize = { current: 0 };
+    const positionEntry = { price: 0 };
+
+    const logs: string[] = [];
+    const addLog = (msg: string) => logs.push(msg);
+
+    const strategyCode = `
+      'use strict';
+      var open = __open__;
+      var high = __high__;
+      var low = __low__;
+      var close = __close__;
+      var volume = __volume__;
+      var time = __time__;
+      var bar = __bar__;
+      var params = __params__;
+      var ta = __ta__;
+      var plotsMap = __plotsMap__;
+      var positionSize = __positionSize__;
+      var positionEntry = __positionEntry__;
+      var signals = __signals__;
+      var drawings = __drawings__;
+      var markers = __markers__;
+      var addLog = __addLog__;
+      ${this._extractUserCode()}
+      for (var i = 0; i < close.length; i++) {
+        bar = i;
+        try {
+          if (typeof calculate === 'function') {
+            calculate();
+          }
+        } catch (e) {
+          signals.push({ type: 'error', message: 'Bar ' + i + ': ' + e.message });
+        }
+      }
+    `;
+
+    try {
+      const fn = new Function(
+        '__open__', '__high__', '__low__', '__close__', '__volume__', '__time__',
+        '__bar__', '__params__', '__ta__', '__plotsMap__', '__positionSize__',
+        '__positionEntry__', '__signals__', '__drawings__', '__markers__', '__addLog__',
+        strategyCode
+      );
+
+      const signals: Array<{ type: string; [key: string]: any }> = [];
+      const drawings: Drawing[] = [];
+
+      fn(
+        open, high, low, close, volume, time,
+        0, finalParams, ta, plotsMap, positionSize, positionEntry,
+        signals, drawings, markers, addLog
+      );
+
+      for (const sig of signals) {
+        if (sig.type === 'signal') {
+          result.signals.push(sig as StrategySignal);
+        } else if (sig.type === 'error') {
+          result.errors.push(sig.message as string);
+        }
+      }
+
+      for (const d of drawings) {
+        result.drawings.push(d);
+      }
+
+      for (const [title, p] of plotsMap) {
+        result.plots.push({
+          id: `strategy-plot-${title}`,
+          title: p.title || title,
+          color: p.color || '#bfff1d',
+          data: p.values,
+        });
+      }
+
+      result.logs = logs;
+
+    } catch (e: any) {
+      result.errors.push(e.message);
+    }
+
+    return result;
   }
 
-  private extractCalculate(code: string): string {
-    const match = code.match(/calculate\s*\(\s*ctx\s*\)\s*\{([^}]*)\}/s);
-    return match ? `function(ctx) { ${match[1]} }` : 'function(ctx) {}';
+  private _extractUserCode(): string {
+    return '';
   }
 
-  run(candles: Candle[], params?: Record<string, number>): { signals: StrategySignal[]; plots: any[] } {
-    if (!this.calculateFn) return { signals: [], plots: [] };
+  runOnCandle(candles: Candle[], onCandle: (ctx: StrategyContext) => void): void {
+    const open = candles.map(c => c.open as number);
+    const high = candles.map(c => c.high as number);
+    const low = candles.map(c => c.low as number);
+    const close = candles.map(c => c.close as number);
+    const volume = candles.map(c => c.volume as number);
+    const time = candles.map(c => c.time as number);
 
-    const open = candles.map(c => c.open);
-    const high = candles.map(c => c.high);
-    const low = candles.map(c => c.low);
-    const close = candles.map(c => c.close);
-    const volume = candles.map(c => c.volume);
-    const time = candles.map(c => c.time);
-
-    const userParams = this.setupFn ? this.setupFn({
-      candles, open, high, low, close, volume, time,
-      barIndex: 0, params: params || {}, ta, plot: () => {}, plotshape: () => {}, hline: () => {},
-      }) : {};
-
-    const finalParams = { ...userParams, ...params };
     const signals: StrategySignal[] = [];
-    const plots: any[] = [];
-    let positionSize = 0;
-    let positionAvgPrice = 0;
+    const plotsMap = new Map<string, { title: string; color: string; values: { time: number; value: number }[] }>();
+    const drawings: Drawing[] = [];
+    const markers: StrategyMarker[] = [];
 
     for (let i = 0; i < candles.length; i++) {
       const ctx: StrategyContext = {
         candles: candles.slice(0, i + 1),
         open, high, low, close, volume, time,
         barIndex: i,
-        params: finalParams,
+        params: this.params,
         ta,
         plot: (series, title, color, style) => {
-          const val = series[i];
-          if (val !== undefined && !isNaN(val)) {
-            plots.push({ time: time[i], value: val, title, color, style: style || 'line' });
+          const t = title || 'plot';
+          const c = color || '#bfff1d';
+          if (!plotsMap.has(t)) {
+            plotsMap.set(t, { title: t, color: c, values: [] });
+          }
+          const p = plotsMap.get(t)!;
+          p.values.push({ time: time[i], value: series[i] });
+        },
+        plotshape: (series, title, location, style, color) => {
+          const shapeStyle = SHAPE_STYLE_MAP[(style || 'arrowup').toLowerCase().replace(/\s/g, '')] || 'arrow-up';
+          const c = color || '#bfff1d';
+          const locationOffset = location === 'belowbar' ? 1 : -1;
+          for (let j = 0; j < series.length; j++) {
+            if (series[j]) {
+              const price = close[j] + locationOffset * (high[j] - low[j]) * 0.3;
+              drawings.push({
+                id: `shape-${title || 'shape'}-${j}`,
+                type: 'shape',
+                points: [{ time: time[j], price }],
+                color: c,
+                shapeStyle,
+                size: 10,
+              });
+            }
           }
         },
-        plotshape: (series, title, location, style) => {},
         hline: (price, title, color) => {
-          plots.push({ type: 'hline', price, title, color });
+          drawings.push({
+            id: `hline-${title || price}`,
+            type: 'horizontal-line',
+            points: [{ time: 0, price }],
+            color: color || '#ef4444',
+            borderWidth: 1,
+          });
         },
+        buy: (qty, sl, tp) => {
+          signals.push({ action: 'BUY', quantity: qty || 0.1, takeProfit: tp, stopLoss: sl, price: close[i], time: time[i] });
+          markers.push({ time: time[i], type: 'buy', price: close[i], text: `B${qty ? ` ${qty}` : ''}` });
+        },
+        sell: (qty, sl, tp) => {
+          signals.push({ action: 'SELL', quantity: qty || 0.1, takeProfit: tp, stopLoss: sl, price: close[i], time: time[i] });
+          markers.push({ time: time[i], type: 'sell', price: close[i], text: `S${qty ? ` ${qty}` : ''}` });
+        },
+        close: () => {
+          signals.push({ action: 'CLOSE', quantity: 0, price: close[i], time: time[i] });
+        },
+        log: (msg) => {},
       };
 
       try {
-        this.calculateFn(ctx);
-      } catch {}
+        onCandle(ctx);
+      } catch (e: any) {
+        console.error('Strategy error:', e);
+      }
     }
-
-    return { signals, plots };
   }
 
   getConfig(): StrategyConfig {
     return this.config;
   }
+
+  getError(): string | null {
+    return this.lastError;
+  }
+
+  setParams(params: Record<string, number>): void {
+    this.params = { ...this.params, ...params };
+  }
+
+  getParams(): Record<string, number> {
+    return { ...this.params };
+  }
+}
+
+export function createStrategyAPI(params: {
+  candles: Candle[];
+  open: number[];
+  high: number[];
+  low: number[];
+  close: number[];
+  volume: number[];
+  time: number[];
+  barIndex: number;
+}): {
+  api: StrategyContext;
+  signals: StrategySignal[];
+  plots: PlotSeries[];
+  drawings: Drawing[];
+  markers: StrategyMarker[];
+  logs: string[];
+} {
+  const { candles, open, high, low, close, volume, time, barIndex } = params;
+  const plotsMap = new Map<string, { title: string; color: string; values: { time: number; value: number }[] }>();
+  const signals: StrategySignal[] = [];
+  const drawings: Drawing[] = [];
+  const markers: StrategyMarker[] = [];
+  const logs: string[] = [];
+
+  const api: StrategyContext = {
+    candles,
+    open, high, low, close, volume, time,
+    barIndex,
+    params: {},
+    ta,
+    plot: (series, title, color, style) => {
+      const t = title || 'plot';
+      const c = color || '#bfff1d';
+      if (!plotsMap.has(t)) {
+        plotsMap.set(t, { title: t, color: c, values: [] });
+      }
+      plotsMap.get(t)!.values.push({ time: time[barIndex], value: series[barIndex] });
+    },
+    plotshape: (series, title, location, style, color) => {
+      const shapeStyle = SHAPE_STYLE_MAP[(style || 'arrowup').toLowerCase().replace(/\s/g, '')] || 'arrow-up';
+      const c = color || '#bfff1d';
+      const locationOffset = location === 'belowbar' ? 1 : -1;
+      for (let j = 0; j < series.length; j++) {
+        if (series[j]) {
+          const price = close[j] + locationOffset * (high[j] - low[j]) * 0.3;
+          drawings.push({
+            id: `shape-${title || 'shape'}-${j}`,
+            type: 'shape',
+            points: [{ time: time[j], price }],
+            color: c,
+            shapeStyle,
+            size: 10,
+          });
+        }
+      }
+    },
+    hline: (price, title, color) => {
+      drawings.push({
+        id: `hline-${title || price}`,
+        type: 'horizontal-line',
+        points: [{ time: 0, price }],
+        color: color || '#ef4444',
+        borderWidth: 1,
+      });
+    },
+    buy: (qty, sl, tp) => {
+      signals.push({ action: 'BUY', quantity: qty || 0.1, takeProfit: tp, stopLoss: sl, price: close[barIndex], time: time[barIndex] });
+      markers.push({ time: time[barIndex], type: 'buy', price: close[barIndex], text: `B${qty ? ` ${qty}` : ''}` });
+    },
+    sell: (qty, sl, tp) => {
+      signals.push({ action: 'SELL', quantity: qty || 0.1, takeProfit: tp, stopLoss: sl, price: close[barIndex], time: time[barIndex] });
+      markers.push({ time: time[barIndex], type: 'sell', price: close[barIndex], text: `S${qty ? ` ${qty}` : ''}` });
+    },
+    close: () => {
+      signals.push({ action: 'CLOSE', quantity: 0, price: close[barIndex], time: time[barIndex] });
+    },
+    log: (msg) => {
+      logs.push(`[${new Date(time[barIndex] * 1000).toISOString()}] ${msg}`);
+    },
+  };
+
+  const plots: PlotSeries[] = Array.from(plotsMap.entries()).map(([title, p]) => ({
+    id: `strategy-plot-${title}`,
+    title: p.title || title,
+    color: p.color || '#bfff1d',
+    data: p.values,
+  }));
+
+  return { api, signals, plots, drawings, markers, logs };
 }

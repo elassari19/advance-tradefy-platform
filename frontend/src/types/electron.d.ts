@@ -16,6 +16,15 @@ interface ElectronAPI {
   onOpenFile: (callback: (filePath: string) => void) => void;
   saveHtmlReport: (htmlContent: string) => Promise<string | null>;
   savePngGraph: (base64Data: string) => Promise<string | null>;
+  prepareBacktestData: (req: any) => Promise<any>;
+  fetchBacktestHistory: (params: { symbol: string; interval: string; limit: number }) => Promise<any[]>;
+  deployStrategy: (params: { symbol: string; code: string; language?: string }) => Promise<{ success: boolean; error?: string }>;
+  removeStrategy: (symbol: string) => Promise<{ success: boolean }>;
+  getActiveStrategies: () => Promise<string[]>;
+  submitStrategyOrder: (order: { symbol: string; side: string; quantity: number; stopLoss?: number; takeProfit?: number }) => Promise<{ success: boolean; error?: string; id?: string }>;
+  onStrategyLogs: (callback: (data: { symbol: string; messages: string[]; timestamp: number }) => void) => void;
+  onStrategyVisuals: (callback: (data: { symbol: string; plots: any[]; markers: any[]; drawings: any[] }) => void) => void;
+  onStrategyStatus: (callback: (data: { symbol: string; active: boolean }) => void) => void;
 }
 
 declare global {

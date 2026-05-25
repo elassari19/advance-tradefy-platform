@@ -1,4 +1,3 @@
-use pyo3::{prelude::*, types::PyDict};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -31,55 +30,83 @@ pub struct TestConnectionResponse {
 }
 
 pub fn test_exchange_connection(req: &TestConnectionRequest) -> TestConnectionResponse {
-    Python::with_gil(|py| {
-        let result = test_connection_inner(py, req);
-        match result {
-            Ok(balance) => TestConnectionResponse {
-                success: true,
-                balance: Some(balance),
-                error: None,
-            },
-            Err(e) => TestConnectionResponse {
-                success: false,
-                balance: None,
-                error: Some(e),
-            },
-        }
-    })
+    match req.platform_id.as_str() {
+        "binance" => test_binance_connection(req),
+        _ => TestConnectionResponse {
+            success: false,
+            balance: None,
+            error: Some(format!("Exchange '{}' is not supported yet. Only Binance is supported via direct API.", req.platform_id)),
+        },
+    }
 }
 
-fn test_connection_inner(py: Python<'_>, req: &TestConnectionRequest) -> Result<serde_json::Value, String> {
-    let ccxt = py.import("ccxt").map_err(|e| format!("Failed to import ccxt: {}", e))?;
-    let exchange_class = ccxt
-        .getattr(req.platform_id.as_str())
-        .map_err(|_| format!("Unknown exchange platform: {}", req.platform_id))?;
+fn test_binance_connection(req: &TestConnectionRequest) -> TestConnectionResponse {
+    let base_url = if req.is_testnet {
+        "https://testnet.binance.vision"
+    } else {
+        "https://api.binance.com"
+    };
 
-    let kwargs = PyDict::new(py);
-    kwargs
-        .set_item("apiKey", req.api_key.as_str())
-        .map_err(|e| format!("Failed to set apiKey: {}", e))?;
-    kwargs
-        .set_item("secret", req.secret_key.as_str())
-        .map_err(|e| format!("Failed to set secret: {}", e))?;
+    let url = format!("{}/api/v3/account", base_url);
 
-    if req.is_testnet {
-        kwargs
-            .set_item("sandbox", true)
-            .map_err(|e| format!("Failed to set sandbox: {}", e))?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    let query = format!("timestamp={}", timestamp);
+    let signature = hmac_sha256(&req.secret_key, &query);
+    let full_url = format!("{}?{}&signature={}", url, query, signature);
+
+    let client = reqwest::blocking::Client::new();
+    match client
+        .get(&full_url)
+        .header("X-MBX-APIKEY", &req.api_key)
+        .header("Content-Type", "application/json")
+        .send()
+    {
+        Ok(resp) => {
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let body = resp.text().unwrap_or_default();
+                return TestConnectionResponse {
+                    success: false,
+                    balance: None,
+                    error: Some(format!("Binance API error ({}): {}", status, body)),
+                };
+            }
+            match resp.json::<serde_json::Value>() {
+                Ok(account) => {
+                    let balances = account.get("balances").cloned().unwrap_or(serde_json::Value::Null);
+                    TestConnectionResponse {
+                        success: true,
+                        balance: Some(serde_json::json!({ "total": balances })),
+                        error: None,
+                    }
+                }
+                Err(e) => TestConnectionResponse {
+                    success: false,
+                    balance: None,
+                    error: Some(format!("Failed to parse Binance response: {}", e)),
+                },
+            }
+        }
+        Err(e) => TestConnectionResponse {
+            success: false,
+            balance: None,
+            error: Some(format!("Failed to connect to Binance: {}", e)),
+        },
     }
+}
 
-    let exchange = exchange_class
-        .call((), Some(kwargs))
-        .map_err(|e| format!("Failed to create exchange instance: {}", e))?;
+fn hmac_sha256(secret: &str, data: &str) -> String {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
 
-    let balance = exchange
-        .call_method0("fetch_balance")
-        .map_err(|e| format!("Failed to fetch balance: {}", e))?;
-
-    let total = balance
-        .get_item("total")
-        .map_err(|e| format!("Failed to extract total balance: {}", e))?;
-
-    let json_str = format!("{}", total);
-    serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse balance: {}", e))
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .expect("HMAC key");
+    mac.update(data.as_bytes());
+    let result = mac.finalize();
+    let code_bytes = result.into_bytes();
+    hex::encode(code_bytes)
 }
