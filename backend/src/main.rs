@@ -237,6 +237,7 @@ async fn main() {
         .route("/api/alerts", get(get_alerts).post(create_alert))
         .route("/api/alerts/:id", delete(delete_alert))
         .route("/api/history", get(get_history))
+        .route("/api/current-candle", get(get_current_candle))
         .route("/api/indicator/evaluate", post(evaluate_indicator_handler))
         .route("/api/indicators/evaluate-batch", post(evaluate_indicators_batch))
         .route("/api/indicators/list", get(list_indicators))
@@ -660,6 +661,21 @@ async fn delete_alert(
 
 // ── End Alert API ──
 
+fn interval_to_minutes(interval: &str) -> Option<u32> {
+    let s = interval.trim_end_matches("min");
+    if let Some(s) = s.strip_suffix('m') {
+        s.parse::<u32>().ok()
+    } else if let Some(s) = s.strip_suffix('h') {
+        s.parse::<u32>().ok().map(|h| h * 60)
+    } else if let Some(s) = s.strip_suffix('d') {
+        s.parse::<u32>().ok().map(|d| d * 1440)
+    } else if let Some(s) = s.strip_suffix('w') {
+        s.parse::<u32>().ok().map(|w| w * 10080)
+    } else {
+        s.parse::<u32>().ok()
+    }
+}
+
 async fn get_history(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HistoryParams>,
@@ -730,6 +746,30 @@ async fn get_history(
     }
 
     Ok(Json(candles))
+}
+
+async fn get_current_candle(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HistoryParams>,
+) -> Result<Json<Option<HistoricalCandle>>, (axum::http::StatusCode, Json<serde_json::Value>)> {
+    let Some(timeframe_minutes) = interval_to_minutes(&params.interval) else {
+        return Ok(Json(None));
+    };
+
+    let aggregators = state.aggregators.lock().unwrap();
+    let current = aggregators
+        .get(&(params.symbol.clone(), timeframe_minutes))
+        .and_then(|agg| agg.get_current_candle())
+        .map(|c| HistoricalCandle {
+            time: c.time / 1000,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+        });
+
+    Ok(Json(current))
 }
 
 async fn evaluate_indicator_handler(

@@ -42,29 +42,60 @@ function useMarketDataForSymbol(symbol: string, timeframe: number) {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const fetchHistory = useCallback(async (sym: string, tf: number) => {
+  const fetchHistory = useCallback(async (sym: string, tf: number, retried = false) => {
     const binanceSymbol = formatSymbol(sym);
     const interval = tf >= 60 ? `${Math.floor(tf / 60)}h` : `${tf}m`;
     try {
-      const res = await fetch(`${API_URL}/api/history?symbol=${binanceSymbol}&interval=${interval}&limit=1000`);
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0 && mountedRef.current) {
-        const historical: Candle[] = data.map((c: any) => ({
-          time: c.time,
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-        }));
-        const map = new Map<number, Candle>();
-        historical.forEach(c => map.set(c.time, c));
-        pendingCandlesRef.current = map;
-        const candlesArray = Array.from(pendingCandlesRef.current.values()).sort((a, b) => a.time - b.time);
-        setCandles(candlesArray);
-        setIsInitializing(false);
+      const histRes = await fetch(`${API_URL}/api/history?symbol=${binanceSymbol}&interval=${interval}&limit=1000`);
+      const histData = await histRes.json();
+
+      let currData: any = null;
+      try {
+        const currRes = await fetch(`${API_URL}/api/current-candle?symbol=${binanceSymbol}&interval=${interval}`);
+        currData = await currRes.json();
+      } catch {
+        // Non-fatal — history still works without the current candle
       }
+
+      if (!mountedRef.current) return;
+
+      const map = new Map<number, Candle>();
+
+      if (Array.isArray(histData) && histData.length > 0) {
+        histData.forEach((c: any) => {
+          map.set(c.time, {
+            time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
+          });
+        });
+      }
+
+      if (currData && currData.time != null) {
+        const lastHist = Array.isArray(histData) && histData.length > 0
+          ? histData[histData.length - 1]
+          : null;
+
+        const candleTime = currData.time;
+
+        if (lastHist && candleTime < lastHist.time && !retried) {
+          fetchHistory(sym, tf, true);
+          return;
+        }
+
+        map.set(candleTime, {
+          time: candleTime,
+          open: currData.open,
+          high: currData.high,
+          low: currData.low,
+          close: currData.close,
+        });
+      }
+
+      pendingCandlesRef.current = map;
+      const candlesArray = Array.from(map.values()).sort((a, b) => a.time - b.time);
+      setCandles(candlesArray);
+      setIsInitializing(false);
     } catch (e) {
-      console.error(`Failed to fetch history for ${sym}:`, e);
+      console.error(`Failed to fetch data for ${sym}:`, e);
       if (mountedRef.current) setIsInitializing(false);
     }
   }, []);
